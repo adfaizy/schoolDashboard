@@ -1,4 +1,5 @@
 import { Pencil, Trash2 } from 'lucide-react'
+import type { UpdateController } from '../hooks/useAppUpdate'
 import type { DashboardController } from '../hooks/useDashboardData'
 import type { DeleteTarget, ModalState } from '../lib/forms'
 
@@ -7,6 +8,7 @@ export type ViewProps = {
   onEdit: (modal: ModalState) => void
   onDelete: (target: DeleteTarget) => void
   onNotify: (message: string, kind: 'success' | 'error') => void
+  update: UpdateController
 }
 
 export function RowActions({ onEdit, onDelete }: {

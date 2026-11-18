@@ -1,10 +1,10 @@
-import { Bell, Camera, ChevronRight, Database, Phone, RefreshCw, Settings, User } from 'lucide-react'
+import { Bell, Camera, ChevronRight, Database, Download, Phone, RefreshCw, RotateCcw, Settings, User } from 'lucide-react'
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { DEFAULT_AVATAR } from '../lib/styles'
 import { isConfigured } from '../lib/supabase'
 import { avatarSrc, type ViewProps } from './shared'
 
-export function ProfileView({ controller, onEdit, onNotify, onConnect }: ViewProps & {
+export function ProfileView({ controller, onEdit, onNotify, onConnect, update }: ViewProps & {
   onConnect: () => void
 }) {
   const profile = controller.data.profile
@@ -48,6 +48,14 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect }: ViewPro
     ...(isConfigured && controller.usingLocal
       ? [{ icon: <RefreshCw size={18} />, label: 'Retry Supabase sync', action: retry }]
       : []),
+    ...(update.pending
+      ? [{ icon: <RotateCcw size={18} />, label: 'Restart to apply update', action: () => void update.restart() }]
+      : []),
+    {
+      icon: <Download size={18} />,
+      label: update.busy ? 'Checking for updates...' : 'Check for updates',
+      action: () => void update.check(true),
+    },
     {
       icon: <Database size={18} />,
       label: isConfigured ? 'Supabase connection' : 'Connect Supabase',
@@ -84,6 +92,24 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect }: ViewPro
             <ChevronRight size={16} className="text-slate-600" />
           </button>
         ))}
+      </div>
+
+      <div className="px-6 mt-6 pb-4">
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">App updates</p>
+          <div className="flex justify-between text-xs text-slate-400">
+            <span>Installed version</span>
+            <span className="font-mono text-slate-300">{update.version ?? 'bundled'}</span>
+          </div>
+          {update.pending && (
+            <div className="flex justify-between text-xs text-slate-400 mt-1.5">
+              <span>Ready to apply</span>
+              <span className="font-mono text-cyan-400">{update.pending}</span>
+            </div>
+          )}
+          {update.message && <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">{update.message}</p>}
+          <p className="text-[10px] text-slate-600 mt-3 truncate" title={update.source}>Updates from {update.source}</p>
+        </div>
       </div>
     </div>
   )

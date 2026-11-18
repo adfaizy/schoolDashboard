@@ -4,6 +4,7 @@ import { DataModal, type FormValues } from './components/DataModal'
 import { SetupScreen } from './components/SetupScreen'
 import { Toast, type ToastState } from './components/Toast'
 import { modalConfig, type DeleteTarget, type ModalState } from './lib/forms'
+import { useAppUpdate, type UpdateController } from './hooks/useAppUpdate'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
 import { AcademicsView } from './views/AcademicsView'
 import { HomeView } from './views/HomeView'
@@ -38,6 +39,7 @@ function Dashboard({
     setToast({ message, kind })
   }, [])
   const dismissToast = useCallback(() => setToast(null), [])
+  const update = useAppUpdate(showToast)
 
   useEffect(() => {
     if (controller.error) showToast(controller.error, 'error')
@@ -145,7 +147,7 @@ function Dashboard({
     }
   }
 
-  const shared = { controller, onEdit: setModal, onDelete: setDeleteTarget, onNotify: showToast }
+  const shared = { controller, onEdit: setModal, onDelete: setDeleteTarget, onNotify: showToast, update }
 
   return (
     <>
