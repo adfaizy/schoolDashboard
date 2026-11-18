@@ -42,7 +42,7 @@ export function modalConfig(
         initial: {
           name: modal.row?.name ?? '',
           grade: modal.row?.grade ?? '',
-          attendance: modal.row?.attendance ?? 100,
+          attendance: modal.row?.attendance ?? 0,
           status: modal.row?.status ?? 'Good',
           avatar_url: modal.row?.avatar_url ?? '',
         },
@@ -127,8 +127,8 @@ export function modalConfig(
           { key: 'avatar_url', label: 'Avatar URL (optional)' },
         ],
         initial: {
-          full_name: profile?.full_name ?? 'Principal Sarah',
-          role_title: profile?.role_title ?? 'Head of Administration',
+          full_name: profile?.full_name ?? '',
+          role_title: profile?.role_title ?? '',
           avatar_url: profile?.avatar_url ?? '',
         },
       }
@@ -138,11 +138,11 @@ export function modalConfig(
         title: 'Edit Overview Numbers',
         fields: [
           { key: 'total_teachers', label: 'Total teachers', type: 'number' },
-          { key: 'pending_fees', label: 'Pending fees', placeholder: '$12.5k' },
+          { key: 'pending_fees', label: 'Pending fees', placeholder: 'e.g. $12.5k' },
         ],
         initial: {
-          total_teachers: settings?.total_teachers ?? 84,
-          pending_fees: settings?.pending_fees ?? '$12.5k',
+          total_teachers: settings?.total_teachers ?? 0,
+          pending_fees: settings?.pending_fees ?? '',
         },
       }
   }

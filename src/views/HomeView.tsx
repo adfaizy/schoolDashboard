@@ -10,16 +10,16 @@ export function HomeView({
   controller, onEdit, onDelete, onNotify, onTabChange,
 }: ViewProps & { onTabChange: (tab: string) => void }) {
   const { data } = controller
-  const name = data.profile?.full_name ?? 'Principal Sarah'
+  const name = data.profile?.full_name ?? 'School Principal'
   const attendance = data.students.length
     ? Math.round(data.students.reduce((sum, s) => sum + s.attendance, 0) / data.students.length)
     : 0
 
   const stats = [
     { title: 'Total Students', value: String(data.students.length), icon: <Users size={22} />, color: COLORS.cyan },
-    { title: 'Total Teachers', value: String(data.settings?.total_teachers ?? 84), icon: <GraduationCap size={22} />, color: COLORS.purple },
+    { title: 'Total Teachers', value: data.settings?.total_teachers != null ? String(data.settings.total_teachers) : '—', icon: <GraduationCap size={22} />, color: COLORS.purple },
     { title: "Today's Attendance", value: data.students.length ? `${attendance}%` : '—', icon: <CheckCircle2 size={22} />, color: COLORS.emerald },
-    { title: 'Pending Fees', value: data.settings?.pending_fees ?? '$12.5k', icon: <CreditCard size={22} />, color: COLORS.rose },
+    { title: 'Pending Fees', value: data.settings?.pending_fees ?? '—', icon: <CreditCard size={22} />, color: COLORS.rose },
   ]
 
   const quickActions = [

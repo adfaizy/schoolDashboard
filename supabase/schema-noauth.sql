@@ -1,5 +1,5 @@
 -- ============================================================
--- School Dashboard — Supabase tables (NO LOGIN REQUIRED)
+-- School Dashboard — Supabase tables (NO LOGIN REQUIRED, NO DUMMY DATA)
 -- Run once: Supabase → SQL Editor → New query → paste all → Run
 -- ============================================================
 
@@ -7,16 +7,16 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
-  full_name text not null default 'Principal Sarah',
-  role_title text not null default 'Head of Administration',
+  full_name text,
+  role_title text,
   avatar_url text default '/avatar.svg',
   updated_at timestamptz not null default now()
 );
 
 create table if not exists public.settings (
   id uuid primary key default gen_random_uuid(),
-  total_teachers integer not null default 84,
-  pending_fees text not null default '$12.5k',
+  total_teachers integer,
+  pending_fees text,
   updated_at timestamptz not null default now()
 );
 
@@ -24,7 +24,7 @@ create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   grade text not null default '',
-  attendance integer not null default 100 check (attendance between 0 and 100),
+  attendance integer not null default 0 check (attendance between 0 and 100),
   status text not null default 'Good',
   avatar_url text,
   created_at timestamptz not null default now()
@@ -62,14 +62,6 @@ create table if not exists public.events (
   created_at timestamptz not null default now()
 );
 
--- One fixed row for the profile and overview settings.
-insert into public.profiles (id, avatar_url)
-values ('00000000-0000-0000-0000-000000000001', '/avatar.svg')
-on conflict (id) do update set avatar_url = excluded.avatar_url;
-
-insert into public.settings (id) values ('00000000-0000-0000-0000-000000000001')
-on conflict (id) do nothing;
-
 -- Public read/write (no login).
 alter table public.profiles enable row level security;
 alter table public.settings enable row level security;
@@ -97,5 +89,3 @@ grant all on public.students to anon, authenticated;
 grant all on public.schedule_items to anon, authenticated;
 grant all on public.messages to anon, authenticated;
 grant all on public.events to anon, authenticated;
-
--- Done. The app will now load and save data without any login.

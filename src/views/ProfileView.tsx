@@ -8,8 +8,8 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect, update }:
   onConnect: () => void
 }) {
   const profile = controller.data.profile
-  const name = profile?.full_name ?? 'Principal Sarah'
-  const role = profile?.role_title ?? 'Head of Administration'
+  const name = profile?.full_name ?? 'School Principal'
+  const role = profile?.role_title ?? 'Not set yet'
 
   async function takePhoto() {
     try {
