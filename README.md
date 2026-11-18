@@ -65,19 +65,13 @@ Either:
 
 ---
 
-## Supabase setup (needed for cloud save)
+## Supabase setup (completed)
 
-The publishable key is configured in `.env` / `.env.production`. The key works, but the
-tables must be created once:
+The schema has been applied and the tables are seeded with the sample dashboard data
+(5 students, 4 classes, 4 conversations, 3 events, plus the profile and settings rows).
 
-1. Sign in at <https://supabase.com/dashboard>
-2. Open project **yecmhcwgnivgxjihrhsa**
-3. **SQL Editor → New query**
-4. Open `supabase/schema-noauth.sql` in Notepad → `Ctrl+A` → `Ctrl+C`
-5. Paste → **Run** (you should see `Success. No rows returned`)
-6. Reopen the app, then **Profile → Retry Supabase sync**
-
-If the tables are missing, the app shows a clear message and keeps saving on the device.
+If you ever reset the project, open `supabase/schema-noauth.sql` and run it once in the
+SQL Editor, then reopen the app.
 
 > **Security note:** this no-login schema uses public read/write policies. Anyone with the
 > publishable key can read or change the data — use it for demos or trusted apps only.
