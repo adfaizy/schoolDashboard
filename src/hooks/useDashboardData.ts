@@ -16,13 +16,30 @@ const TABLE_TO_KEY: Record<TableName, ListKey> = {
 const SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
 
 function errorMessage(error: unknown): string {
-  const raw = error instanceof Error ? error.message : 'Something went wrong.'
-  if (raw.includes('PGRST205') || raw.toLowerCase().includes('could not find the table')) {
-    return 'Supabase tables are missing. Run schema-noauth.sql in your SQL Editor — using device storage for now.'
+  // Supabase/PostgREST errors are plain objects, not Error instances, so inspect their fields.
+  let raw = ''
+  let code = ''
+  if (error instanceof Error) {
+    raw = error.message
+  } else if (error && typeof error === 'object') {
+    const e = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown }
+    raw = [e.message, e.details, e.hint].filter(Boolean).map(String).join(' — ')
+    code = String(e.code ?? '')
+  } else {
+    raw = String(error ?? '')
   }
-  if (raw.includes('PGRST301') || raw.toLowerCase().includes('row level security')) {
-    return 'Supabase permissions are blocking access — using device storage for now.'
+
+  const text = `${code} ${raw}`.toLowerCase()
+  if (text.includes('pgrst205') || text.includes('could not find the table') || text.includes('42p01')) {
+    return 'Supabase tables are missing — run schema-noauth.sql in SQL Editor, then reopen the app. Saving on device for now.'
   }
+  if (text.includes('pgrst301') || text.includes('row level security') || text.includes('permission denied') || text.includes('42501')) {
+    return 'Supabase permissions are blocking access. Re-run schema-noauth.sql in the SQL Editor. Data is saved on this device for now.'
+  }
+  if (text.includes('failed to fetch') || text.includes('network') || text.includes('timeout') || text.includes('offline')) {
+    return 'Cannot reach Supabase right now. Data is saved on this device and will sync when you are online.'
+  }
+  if (!raw) return 'Could not reach Supabase. Data was saved on this device instead.'
   return `${raw} (saved on device instead)`
 }
 
