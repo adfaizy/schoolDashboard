@@ -13,37 +13,33 @@ const TABLE_TO_KEY: Record<TableName, ListKey> = {
   events: 'events',
 }
 
-/** Single shared row for the profile/settings tables when Supabase is connected. */
 const SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
 
 function errorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : 'Something went wrong.'
   if (raw.includes('PGRST205') || raw.toLowerCase().includes('could not find the table')) {
-    return 'Supabase tables are missing. Run schema-noauth.sql in your Supabase SQL Editor, then reopen the app.'
+    return 'Supabase tables are missing. Run schema-noauth.sql in your SQL Editor — using device storage for now.'
   }
   if (raw.includes('PGRST301') || raw.toLowerCase().includes('row level security')) {
-    return 'Supabase permissions are blocking access. Re-run schema-noauth.sql in your SQL Editor.'
+    return 'Supabase permissions are blocking access — using device storage for now.'
   }
-  return raw
+  return `${raw} (saved on device instead)`
 }
 
 export function useDashboardData() {
-  const [data, setData] = useState<DashboardData>(() => (isConfigured ? {
-    students: [], schedule: [], messages: [], events: [], profile: null, settings: null,
-  } : loadLocal()))
+  const [data, setData] = useState<DashboardData>(() => loadLocal())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [remoteOk, setRemoteOk] = useState(false)
   const dataRef = useRef(data)
-
   dataRef.current = data
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     if (!isConfigured || !supabase) {
       setData(loadLocal())
-      return
+      return false
     }
     setLoading(true)
-    setError(null)
     try {
       const [students, schedule, messages, events, profile, settings] = await Promise.all([
         supabase.from('students').select('*').order('created_at', { ascending: true }),
@@ -56,16 +52,24 @@ export function useDashboardData() {
       const failed = [students, schedule, messages, events, profile, settings].find((r) => r.error)
       if (failed?.error) throw failed.error
 
-      setData({
+      const next: DashboardData = {
         students: (students.data ?? []) as DashboardData['students'],
         schedule: (schedule.data ?? []) as DashboardData['schedule'],
         messages: (messages.data ?? []) as DashboardData['messages'],
         events: (events.data ?? []) as DashboardData['events'],
         profile: (profile.data ?? null) as DashboardData['profile'],
         settings: (settings.data ?? null) as DashboardData['settings'],
-      })
+      }
+      setData(next)
+      saveLocal(next)
+      setRemoteOk(true)
+      setError(null)
+      return true
     } catch (e) {
+      setData(loadLocal())
+      setRemoteOk(false)
       setError(errorMessage(e))
+      return false
     } finally {
       setLoading(false)
     }
@@ -81,16 +85,28 @@ export function useDashboardData() {
     saveLocal(next)
   }
 
+  async function tryRemote(write: () => Promise<void>): Promise<boolean> {
+    if (!isConfigured || !supabase || !remoteOk) return false
+    try {
+      await write()
+      await refresh()
+      return true
+    } catch (e) {
+      setRemoteOk(false)
+      setError(errorMessage(e))
+      return false
+    }
+  }
+
   async function saveRecord(table: TableName, row: Record<string, unknown>): Promise<void> {
-    if (isConfigured && supabase) {
+    const didRemote = await tryRemote(async () => {
       const payload = { ...row }
       if (!payload.id) delete payload.id
       delete payload.created_at
-      const { error: e } = await supabase.from(table).upsert(payload)
+      const { error: e } = await supabase!.from(table).upsert(payload)
       if (e) throw e
-      await refresh()
-      return
-    }
+    })
+    if (didRemote) return
 
     const key = TABLE_TO_KEY[table]
     const current = dataRef.current
@@ -105,12 +121,11 @@ export function useDashboardData() {
   }
 
   async function deleteRecord(table: TableName, id: string): Promise<void> {
-    if (isConfigured && supabase) {
-      const { error: e } = await supabase.from(table).delete().eq('id', id)
+    const didRemote = await tryRemote(async () => {
+      const { error: e } = await supabase!.from(table).delete().eq('id', id)
       if (e) throw e
-      await refresh()
-      return
-    }
+    })
+    if (didRemote) return
 
     const key = TABLE_TO_KEY[table]
     const current = dataRef.current
@@ -124,16 +139,13 @@ export function useDashboardData() {
   async function saveProfile(row: {
     full_name: string; role_title: string; avatar_url: string | null
   }): Promise<void> {
-    if (isConfigured && supabase) {
-      const { error: e } = await supabase.from('profiles').upsert({
-        id: SINGLETON_ID,
-        ...row,
-        updated_at: new Date().toISOString(),
+    const didRemote = await tryRemote(async () => {
+      const { error: e } = await supabase!.from('profiles').upsert({
+        id: SINGLETON_ID, ...row, updated_at: new Date().toISOString(),
       })
       if (e) throw e
-      await refresh()
-      return
-    }
+    })
+    if (didRemote) return
     commitLocal({
       ...dataRef.current,
       profile: { id: 'local-profile', ...row, updated_at: new Date().toISOString() },
@@ -141,25 +153,31 @@ export function useDashboardData() {
   }
 
   async function saveSettings(row: { total_teachers: number; pending_fees: string }): Promise<void> {
-    if (isConfigured && supabase) {
-      const { error: e } = await supabase.from('settings').upsert({
-        id: SINGLETON_ID,
-        ...row,
-        updated_at: new Date().toISOString(),
+    const didRemote = await tryRemote(async () => {
+      const { error: e } = await supabase!.from('settings').upsert({
+        id: SINGLETON_ID, ...row, updated_at: new Date().toISOString(),
       })
       if (e) throw e
-      await refresh()
-      return
-    }
+    })
+    if (didRemote) return
     commitLocal({
       ...dataRef.current,
       settings: { id: 'local-settings', ...row, updated_at: new Date().toISOString() },
     })
   }
 
+  async function retryConnection(): Promise<boolean> {
+    setError(null)
+    setRemoteOk(true)
+    const ok = await refresh()
+    if (!ok) setRemoteOk(false)
+    return ok
+  }
+
   return {
-    isRemote: isConfigured,
-    loading, error, data, refresh,
+    isRemote: isConfigured && remoteOk,
+    usingLocal: !isConfigured || !remoteOk,
+    loading, error, data, refresh, retryConnection,
     saveRecord, deleteRecord, saveProfile, saveSettings,
   }
 }

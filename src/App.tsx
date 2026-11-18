@@ -87,6 +87,17 @@ function Dashboard({
             avatar_url: asImageUrl(values.avatar_url),
           })
           break
+        case 'reply':
+          await controller.saveRecord('messages', {
+            id: modal.row.id,
+            name: modal.row.name,
+            msg: String(values.msg ?? ''),
+            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            unread: 0,
+            is_group: modal.row.is_group,
+            avatar_url: modal.row.avatar_url,
+          })
+          break
         case 'event':
           await controller.saveRecord('events', {
             ...(modal.row ? { id: modal.row.id } : {}),

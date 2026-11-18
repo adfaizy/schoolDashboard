@@ -31,7 +31,7 @@ const sample: DashboardData = {
     id: 'local-profile',
     full_name: 'Principal Sarah',
     role_title: 'Head of Administration',
-    avatar_url: 'https://i.pravatar.cc/150?img=47',
+    avatar_url: '/avatar.svg',
     updated_at: '2026-01-01T00:00:00Z',
   },
   settings: {

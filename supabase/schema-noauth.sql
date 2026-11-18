@@ -9,7 +9,7 @@ create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   full_name text not null default 'Principal Sarah',
   role_title text not null default 'Head of Administration',
-  avatar_url text default 'https://i.pravatar.cc/150?img=47',
+  avatar_url text default '/avatar.svg',
   updated_at timestamptz not null default now()
 );
 
@@ -64,7 +64,7 @@ create table if not exists public.events (
 
 -- One fixed row for the profile and overview settings.
 insert into public.profiles (id, avatar_url)
-values ('00000000-0000-0000-0000-000000000001', 'https://i.pravatar.cc/150?img=47')
+values ('00000000-0000-0000-0000-000000000001', '/avatar.svg')
 on conflict (id) do update set avatar_url = excluded.avatar_url;
 
 insert into public.settings (id) values ('00000000-0000-0000-0000-000000000001')

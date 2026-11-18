@@ -110,7 +110,11 @@ export function HomeView({
             {data.events.map((event: EventItem) => {
               const accent = colorFor(event.accent)
               return (
-                <div key={event.id} className={`bg-slate-900/60 p-4 rounded-2xl border border-slate-800 border-l-4 ${accent.accent} flex items-center gap-3`}>
+                <div
+                  key={event.id}
+                  onClick={() => onEdit({ kind: 'event', row: event })}
+                  className={`bg-slate-900/60 p-4 rounded-2xl border border-slate-800 border-l-4 ${accent.accent} flex items-center gap-3 cursor-pointer hover:border-slate-600 active:scale-[0.99] transition-all`}
+                >
                   <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/50 shrink-0">
                     <Icon name={event.icon} size={18} className={accent.text} />
                   </div>

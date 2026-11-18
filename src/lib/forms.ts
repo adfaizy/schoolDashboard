@@ -7,6 +7,7 @@ export type ModalState =
   | { kind: 'student'; row?: Student }
   | { kind: 'schedule'; row?: ScheduleItem }
   | { kind: 'message'; row?: ChatMessage }
+  | { kind: 'reply'; row: ChatMessage }
   | { kind: 'event'; row?: EventItem }
   | { kind: 'profile' }
   | { kind: 'settings' }
@@ -87,6 +88,15 @@ export function modalConfig(
           is_group: modal.row?.is_group ?? false,
           avatar_url: modal.row?.avatar_url ?? '',
         },
+      }
+
+    case 'reply':
+      return {
+        title: `Reply to ${modal.row.name}`,
+        fields: [
+          { key: 'msg', label: 'Message', required: true, placeholder: 'Type your reply...' },
+        ],
+        initial: { msg: '' },
       }
 
     case 'event':

@@ -16,7 +16,11 @@ export function MessagesView({ controller, onEdit, onDelete }: ViewProps) {
       ) : (
         <div className="px-6 flex flex-col gap-2 mt-2">
           {chats.map((chat) => (
-            <div key={chat.id} className="bg-slate-900/40 p-3.5 rounded-2xl flex items-center gap-3 border border-transparent hover:border-slate-800">
+            <div
+              key={chat.id}
+              onClick={() => onEdit({ kind: 'reply', row: chat })}
+              className="bg-slate-900/40 p-3.5 rounded-2xl flex items-center gap-3 border border-transparent hover:border-cyan-500/40 cursor-pointer active:scale-[0.99] transition-all"
+            >
               {chat.is_group ? (
                 <div className="w-12 h-12 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
                   <Users size={20} />

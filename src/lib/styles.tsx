@@ -4,7 +4,7 @@ import {
   Plus, Search, Settings, User, Users, type LucideIcon,
 } from 'lucide-react'
 
-export const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=47'
+export const DEFAULT_AVATAR = '/avatar.svg'
 
 /** Static class strings so Tailwind keeps them in the production build. */
 export const COLORS: Record<string, {

@@ -53,7 +53,10 @@ export function AcademicsView({ controller, onEdit, onDelete }: ViewProps) {
                     <span className="text-[10px] font-bold text-slate-300">{time}</span>
                     <span className="text-[9px] text-slate-500 block">{period ?? ''}</span>
                   </div>
-                  <div className={`flex-1 bg-slate-900/80 p-4 rounded-2xl border border-slate-800 border-l-4 ${accent.accent} shadow-lg`}>
+                  <div
+                    onClick={() => onEdit({ kind: 'schedule', row: item })}
+                    className={`flex-1 bg-slate-900/80 p-4 rounded-2xl border border-slate-800 border-l-4 ${accent.accent} shadow-lg cursor-pointer hover:border-slate-600 active:scale-[0.99] transition-all`}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <h4 className="text-sm font-semibold text-slate-100 mb-1.5">{item.subject}</h4>
                       <RowActions

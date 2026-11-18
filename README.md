@@ -2,8 +2,12 @@
 
 This version opens **straight into the dashboard** — no sign-in screen, no username, no password.
 
-- By default, data is saved **on the device** (works offline, sample data included).
+- Data is **local-first**: every add/edit/delete saves immediately on the device, so the app
+  always works offline. When Supabase is ready it also syncs to the cloud automatically.
 - Optionally, it can sync to **Supabase** using only the public anon/publishable key — still no login.
+- **Every row is tappable**: tap a student, class, event or conversation to edit/reply.
+- **Principal photo**: open **Profile** and tap the camera badge on the avatar to take a photo
+  (or pick from the gallery). The photo is saved with the profile and shows on Home and Profile.
 
 **APK:** `D:\school\SchoolDashboard.apk` (debug-signed, installable by sideloading)
 
@@ -32,9 +36,10 @@ That is why the app says **data not save**. Run this once:
 6. You should see `Success. No rows returned`.
 
 Then **close and reopen the app** on your phone. All screens will load and save
-to Supabase directly — no login is required. The principal photo is set to a
-default avatar in the SQL script and also in the app, so it appears even when
-the profile row is empty.
+to Supabase directly — no login is required. If the tables are missing, the app
+shows a clear message and keeps saving on the device; use **Profile → Retry Supabase sync**
+after running the SQL. The principal photo uses a built-in local avatar by default
+(`public/avatar.svg`) and can be replaced with a camera photo.
 
 > **Security note:** this no-login schema uses public read/write policies. Anyone with
 > the anon key can read or change the data, so use it for demos or trusted apps only.
@@ -47,13 +52,18 @@ the profile row is empty.
 
 - **Home** — student count and average attendance are computed live. The gear icon
   edits teacher count / pending fees; the bell or **Add** button adds an event.
-- **Students / Academics / Messages** — **+ Add** creates a record; pencil/trash
-  icons edit or delete it. Student search filters the live list.
-- **Profile** — edit principal name, title and avatar. **Connect Supabase** opens
-  the connection screen; **Use locally** switches back to device storage.
+  Tap an event card to edit it.
+- **Students** — **+ Add** creates a record; tap any row (or the pencil icon) to edit,
+  the trash icon deletes. The search box filters the live list.
+- **Academics** — filter by day, **+ Add** for a class, tap any class card to edit it.
+- **Messages** — **+ New** starts a conversation; tap a conversation to reply, the
+  pencil/trash icons edit or delete it.
+- **Profile** — edit principal name and title, or tap the camera badge on the photo
+  to take a new picture. **Retry Supabase sync** reconnects after running the SQL.
+  **Connect Supabase** opens the connection screen.
 
-To change the Supabase URL/key later, open **Profile → Connect Supabase**. The
-values entered there are stored on the device and override `.env`.
+The Supabase URL/key in `.env` is baked into the APK and takes priority over values
+entered in the app. To change the project, update `.env` and rebuild the APK.
 
 ---
 

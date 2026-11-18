@@ -1,4 +1,5 @@
-import { Bell, ChevronRight, Database, Phone, Settings, User } from 'lucide-react'
+import { Bell, Camera, ChevronRight, Database, Phone, RefreshCw, Settings, User } from 'lucide-react'
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { DEFAULT_AVATAR } from '../lib/styles'
 import { isConfigured } from '../lib/supabase'
 import { avatarSrc, type ViewProps } from './shared'
@@ -10,6 +11,31 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect }: ViewPro
   const name = profile?.full_name ?? 'Principal Sarah'
   const role = profile?.role_title ?? 'Head of Administration'
 
+  async function takePhoto() {
+    try {
+      const photo = await CapacitorCamera.getPhoto({
+        quality: 70,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Prompt,
+        allowEditing: true,
+        width: 400,
+        height: 400,
+        correctOrientation: true,
+      })
+      if (!photo.dataUrl) return
+      await controller.saveProfile({ full_name: name, role_title: role, avatar_url: photo.dataUrl })
+      onNotify('Profile photo updated', 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (message && !/cancel/i.test(message)) onNotify(`Camera: ${message}`, 'error')
+    }
+  }
+
+  async function retry() {
+    const ok = await controller.retryConnection()
+    onNotify(ok ? 'Supabase reconnected' : 'Still offline — using device storage', ok ? 'success' : 'error')
+  }
+
   const menu = [
     { icon: <User size={18} />, label: 'Personal Details', action: () => onEdit({ kind: 'profile' }) },
     { icon: <Bell size={18} />, label: 'Notifications', action: () => onEdit({ kind: 'event' }) },
@@ -19,9 +45,12 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect }: ViewPro
       label: 'Support & Help',
       action: () => onNotify('Contact your school IT administrator for help.', 'success'),
     },
+    ...(isConfigured && controller.usingLocal
+      ? [{ icon: <RefreshCw size={18} />, label: 'Retry Supabase sync', action: retry }]
+      : []),
     {
       icon: <Database size={18} />,
-      label: isConfigured ? 'Supabase connected — change' : 'Connect Supabase',
+      label: isConfigured ? 'Supabase connection' : 'Connect Supabase',
       action: onConnect,
     },
   ]
@@ -32,17 +61,18 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect }: ViewPro
         <div className="relative mb-4">
           <img src={avatarSrc(profile?.avatar_url ?? DEFAULT_AVATAR, name)} alt="Profile" className="w-24 h-24 rounded-full border-4 border-slate-900 shadow-xl object-cover" />
           <button
-            onClick={() => onEdit({ kind: 'profile' })}
-            className="absolute bottom-0 right-0 w-8 h-8 bg-cyan-500 rounded-full flex items-center justify-center text-slate-950 border-4 border-slate-950 hover:scale-105 transition-transform"
-            aria-label="Edit profile"
+            onClick={takePhoto}
+            className="absolute bottom-0 right-0 w-9 h-9 bg-cyan-500 rounded-full flex items-center justify-center text-slate-950 border-4 border-slate-950 hover:scale-105 active:scale-95 transition-transform"
+            aria-label="Take profile photo"
           >
-            <Settings size={14} />
+            <Camera size={15} />
           </button>
         </div>
+        <p className="text-[10px] font-medium text-cyan-400 uppercase tracking-wider mb-2">Tap camera to take photo</p>
         <h2 className="text-xl font-bold text-slate-100">{name}</h2>
         <p className="text-sm text-cyan-400 font-medium mt-1">{role}</p>
         <p className="text-[11px] text-slate-500 mt-2">
-          {isConfigured ? 'Synced with Supabase' : 'Stored on this device'}
+          {controller.usingLocal ? 'Stored on this device' : 'Synced with Supabase'}
         </p>
       </div>
 

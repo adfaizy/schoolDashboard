@@ -37,7 +37,11 @@ export function StudentsView({ controller, onEdit, onDelete }: ViewProps) {
       ) : (
         <div className="px-6 flex flex-col gap-3 mt-2">
           {students.map((student) => (
-            <div key={student.id} className="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex items-center gap-3">
+            <div
+              key={student.id}
+              onClick={() => onEdit({ kind: 'student', row: student })}
+              className="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex items-center gap-3 cursor-pointer hover:border-cyan-500/40 active:scale-[0.99] transition-all"
+            >
               <img src={avatarSrc(student.avatar_url, student.name)} alt={student.name} className="w-12 h-12 rounded-full border border-slate-700 object-cover shrink-0" />
               <div className="flex-1 min-w-0">
                 <h4 className="text-sm font-semibold text-slate-100 truncate">{student.name}</h4>
