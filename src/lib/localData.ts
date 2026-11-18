@@ -1,7 +1,7 @@
 import { emptyData, type DashboardData } from './types'
 
 // Bumped so devices drop the old bundled sample data.
-const KEY = 'schooldashboard.data.v2'
+const KEY = 'schooldashboard.data.v3'
 
 function clone(data: DashboardData): DashboardData {
   return JSON.parse(JSON.stringify(data)) as DashboardData

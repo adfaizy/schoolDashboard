@@ -1,0 +1,1105 @@
+﻿"""
+School Management System â€” Desktop Edition
+=========================================
+
+A fully functional school management system built with Tkinter.
+Talks to the same Supabase database as the School Dashboard Android app,
+and falls back to a local JSON file when offline.
+
+Modules: Dashboard/Reports Â· Students Â· Classes & Subjects Â· Staff & Teachers Â·
+Timetable Â· Attendance Â· Exams & Results Â· Fees Â· Library (Book Bank) Â·
+Transport Â· Hostel Â· Messages Â· Notices Â· School Settings Â· Principal Profile
+
+Run with:  python school_system.py   (or double-click run.bat)
+"""
+
+import os
+import sys
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog, simpledialog
+from datetime import datetime, date
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from school_db import SchoolDB, SINGLETON_ID
+
+APP_NAME = "School Management System"
+APP_VERSION = "1.0.0"
+
+COLORS = {
+    "sidebar": "#0f172a",
+    "sidebar_hi": "#1e293b",
+    "accent": "#22d3ee",
+    "bg": "#f1f5f9",
+    "card": "#ffffff",
+    "text": "#0f172a",
+}
+
+
+# ---------------------------------------------------------------- helpers
+def today_str():
+    return date.today().isoformat()
+
+
+def class_label(c):
+    sec = f" {c['section']}" if c.get("section") else ""
+    return f"{c['grade']}{sec}"
+
+
+def fmt_date(value):
+    if not value:
+        return ""
+    return str(value)[:10]
+
+
+class CrudPanel(ttk.Frame):
+    """Generic list + add/edit/delete panel driven by a config."""
+
+    def __init__(self, master, db, title, table, columns, fields, title_field=None,
+                 refresh_hint=None, actions=None, transform=None):
+        super().__init__(master)
+        self.db = db
+        self.title = title
+        self.table = table
+        self.columns = columns
+        self.fields = fields
+        self.title_field = title_field or columns[0]["key"]
+        self.actions = actions or []
+        self.transform = transform or (lambda data, row: data)
+        self._opt_maps = {}
+        self._build()
+        self.refresh()
+
+    # ---------- UI ----------
+    def _build(self):
+        head = ttk.Frame(self, padding=(12, 12, 12, 0))
+        head.pack(fill="x")
+        ttk.Label(head, text=self.title, font=("Segoe UI", 15, "bold")).pack(side="left")
+        for label, cmd in self.actions:
+            ttk.Button(head, text=label, command=cmd).pack(side="right", padx=2)
+        ttk.Button(head, text="Delete", command=self.delete).pack(side="right", padx=2)
+        ttk.Button(head, text="Edit", command=self.edit).pack(side="right", padx=2)
+        ttk.Button(head, text="+ Add", command=self.add).pack(side="right", padx=2)
+        ttk.Button(head, text="Refresh", command=self.refresh).pack(side="right", padx=2)
+
+        table_frame = ttk.Frame(self, padding=(12, 8, 12, 12))
+        table_frame.pack(fill="both", expand=True)
+        self.tree = ttk.Treeview(table_frame, columns=[c["key"] for c in self.columns],
+                                 show="headings", selectmode="browse")
+        for c in self.columns:
+            self.tree.heading(c["key"], text=c["label"])
+            self.tree.column(c["key"], width=c.get("width", 140), anchor=c.get("anchor", "w"))
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+        self.tree.bind("<Double-1>", lambda _e: self.edit())
+
+    # ---------- data ----------
+    def refresh(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        rows = self.db.select(self.table)
+        for row in rows:
+            self.tree.insert("", "end", iid=str(row.get("id")),
+                             values=[c.get("render", lambda r: r.get(c["key"], ""))(row)
+                                     for c in self.columns])
+
+    def selected_row(self):
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        rid = sel[0]
+        return next((r for r in self.db.select(self.table) if str(r.get("id")) == rid), None)
+
+    def add(self):
+        self._open_form()
+
+    def edit(self):
+        row = self.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a row first.")
+            return
+        self._open_form(row)
+
+    def delete(self):
+        row = self.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a row first.")
+            return
+        label = str(row.get(self.title_field, "this record"))
+        if messagebox.askyesno("Delete", f"Delete: {label}?"):
+            self.db.delete(self.table, row.get("id"))
+            self.refresh()
+
+    # ---------- form ----------
+    def _combo_values(self, field):
+        opts = field["options"]() if callable(field.get("options")) else field.get("options", [])
+        labels = [o[0] for o in opts]
+        self._opt_maps[field["key"]] = {label: o[1] for label, o in zip(labels, opts)}
+        return labels, self._opt_maps[field["key"]]
+
+    def _open_form(self, row=None):
+        top = tk.Toplevel(self)
+        top.title(("Edit" if row else "Add") + " â€” " + self.title)
+        top.transient(self.winfo_toplevel())
+        top.grab_set()
+        top.resizable(False, False)
+
+        entries = {}
+        for i, field in enumerate(self.fields):
+            ttk.Label(top, text=field["label"] + (" *" if field.get("required") else "")).grid(
+                row=i, column=0, sticky="w", padx=12, pady=4)
+            if field.get("type") == "combo":
+                labels, _ = self._combo_values(field)
+                current = str(row.get(field["key"], "")) if row else ""
+                # try to preselect the label matching the stored value
+                pre = next((l for l, v in self._opt_maps[field["key"]].items() if v == current), "")
+                var = tk.StringVar(value=pre or (labels[0] if labels else ""))
+                combo = ttk.Combobox(top, textvariable=var, values=labels, state="readonly", width=40)
+                combo.grid(row=i, column=1, padx=12, pady=4, sticky="ew")
+                entries[field["key"]] = ("combo", var)
+            elif field.get("type") == "number":
+                var = tk.StringVar(value=str(row.get(field["key"], "") if row else "0"))
+                ent = ttk.Entry(top, textvariable=var, width=42)
+                ent.grid(row=i, column=1, padx=12, pady=4, sticky="ew")
+                entries[field["key"]] = ("number", var)
+            elif field.get("type") == "date":
+                var = tk.StringVar(value=str(fmt_date(row.get(field["key"]))) if row else today_str())
+                ent = ttk.Entry(top, textvariable=var, width=42)
+                ent.grid(row=i, column=1, padx=12, pady=4, sticky="ew")
+                entries[field["key"]] = ("date", var)
+            elif field.get("type") == "memo":
+                var = tk.StringVar(value=str(row.get(field["key"], "") if row else ""))
+                ent = tk.Text(top, width=34, height=3)
+                ent.insert("1.0", var.get())
+                ent.grid(row=i, column=1, padx=12, pady=4, sticky="ew")
+                entries[field["key"]] = ("memo", ent)
+            else:
+                var = tk.StringVar(value=str(row.get(field["key"], "") if row else ""))
+                ent = ttk.Entry(top, textvariable=var, width=42)
+                ent.grid(row=i, column=1, padx=12, pady=4, sticky="ew")
+                entries[field["key"]] = ("text", var)
+
+        def save():
+            data = {}
+            missing = []
+            for field in self.fields:
+                kind, widget = entries[field["key"]]
+                if kind == "memo":
+                    val = widget.get("1.0", "end-1c").strip()
+                else:
+                    val = widget.get().strip()
+                if kind == "combo":
+                    val = self._opt_maps[field["key"]].get(val, val)
+                if kind == "number":
+                    try:
+                        val = float(val or 0)
+                    except ValueError:
+                        messagebox.showerror("Invalid number", f"{field['label']} must be a number.")
+                        return
+                if field.get("required") and (val == "" or val is None):
+                    missing.append(field["label"])
+                data[field["key"]] = val
+            if missing:
+                messagebox.showerror("Missing values", "Please fill in: " + ", ".join(missing))
+                return
+            data = self.transform(data, row)
+            if row:
+                self.db.update(self.table, row["id"], data)
+            else:
+                self.db.insert(self.table, data)
+            top.destroy()
+            self.refresh()
+
+        btns = ttk.Frame(top, padding=(12, 6, 12, 12))
+        btns.grid(row=len(self.fields), column=0, columnspan=2, sticky="ew")
+        ttk.Button(btns, text="Save", command=save).pack(side="right")
+        ttk.Button(btns, text="Cancel", command=top.destroy).pack(side="right", padx=(0, 6))
+
+
+# ---------------------------------------------------------------- dashboard
+class DashboardPanel(ttk.Frame):
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        head = ttk.Frame(self, padding=(12, 12, 12, 0))
+        head.pack(fill="x")
+        ttk.Label(head, text="Dashboard & Reports", font=("Segoe UI", 15, "bold")).pack(side="left")
+        ttk.Button(head, text="Refresh", command=self.refresh).pack(side="right")
+
+        self.cards = ttk.Frame(self, padding=(12, 12, 12, 4))
+        self.cards.pack(fill="x")
+        self.report = tk.Text(self, height=18, width=10, wrap="word", background="#0f172a",
+                              foreground="#e2e8f0", font=("Consolas", 10), relief="flat")
+        self.report.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.refresh()
+
+    def stat_card(self, parent, label, value, col):
+        frame = tk.Frame(parent, bg=COLORS["card"], padx=18, pady=14, highlightthickness=1,
+                         highlightbackground="#cbd5e1")
+        frame.grid(row=0, column=col, padx=6, pady=4, sticky="nsew")
+        tk.Label(frame, text=value, bg=COLORS["card"], font=("Segoe UI", 22, "bold"),
+                 fg="#0f172a").pack()
+        tk.Label(frame, text=label, bg=COLORS["card"], font=("Segoe UI", 9), fg="#64748b").pack()
+
+    def refresh(self):
+        for w in self.cards.winfo_children():
+            w.destroy()
+        students = self.db.students()
+        staff = self.db.staff()
+        classes = self.db.classes()
+        books = self.db.select("library_books")
+        issued = sum(1 for b in books if b.get("status") == "issued")
+        msgs = self.db.select("messages")
+        unread = sum(int(m.get("unread", 0) or 0) for m in msgs)
+        fees = self.db.select("fees")
+        fees_total = sum(float(f.get("amount_paid", 0) or 0) for f in fees)
+        events = self.db.select("events")
+        stats = [
+            ("Students", len(students)),
+            ("Staff & Teachers", len(staff)),
+            ("Classes", len(classes)),
+            ("Books Issued", issued),
+            ("Unread Messages", unread),
+            ("Fees Collected", f"${fees_total:,.0f}"),
+        ]
+        for col, (label, value) in enumerate(stats):
+            self.stat_card(self.cards, label, value, col)
+        self.cards.columnconfigure(tuple(range(len(stats))), weight=1)
+
+        # text report
+        lines = [f"School Management Report â€” {datetime.now():%d %b %Y %H:%M}\n"]
+        lines.append(f"Total students: {len(students)}   Total staff: {len(staff)}   Classes: {len(classes)}\n")
+        attendance = self.db.select("attendance")
+        present = sum(1 for a in attendance if a.get("status") == "present")
+        absent = sum(1 for a in attendance if a.get("status") == "absent")
+        lines.append(f"Attendance records: {len(attendance)}  (present {present}, absent {absent})")
+        lines.append("\nStudents not marked present today:")
+        if students:
+            today = today_str()
+            marked = {a.get("record_id") for a in attendance if a.get("date_str") == today and a.get("entity_type") == "students"}
+            missing = [s["name"] for s in students if s["id"] not in marked]
+            lines.append("  " + (", ".join(missing[:20]) if missing else "All students marked today."))
+        else:
+            lines.append("  No students yet.")
+        lines.append("\nUpcoming events:")
+        for e in events:
+            lines.append(f"  â€¢ {e.get('type','')}: {e.get('title','')} â€” {e.get('time','')}")
+        if not events:
+            lines.append("  No events scheduled.")
+        lines.append("\nFee history preview (latest 10):")
+        fees = sorted(fees, key=lambda f: str(f.get("payment_date", "")), reverse=True)[:10]
+        for f in fees:
+            name = self.db.student_name(f.get("student_id"))
+            lines.append(f"  â€¢ {name} â€” {f.get('month_year','')} â€” ${float(f.get('amount_paid',0) or 0):,.2f}")
+        if not fees:
+            lines.append("  No payments recorded.")
+        self.report.delete("1.0", "end")
+        self.report.insert("1.0", "\n".join(lines))
+
+
+# ---------------------------------------------------------------- students
+def build_student_map(db):
+    return {s["id"]: s["name"] for s in db.students()}
+
+def build_class_options(db):
+    return [(class_label(c), c["id"]) for c in db.classes()]
+
+def class_by_id(db, class_id):
+    for c in db.classes():
+        if c.get("id") == class_id:
+            return c
+    return None
+
+def student_transform(db):
+    def wrap(data, row):
+        cls = class_by_id(db, data.get("class_id"))
+        if cls:
+            sec = f" {cls['section']}" if cls.get("section") else ""
+            data["grade"] = f"{cls['grade']}{sec}"
+        return data
+    return wrap
+
+def make_students_panel(parent, db):
+    cols = [
+        {"key": "name", "label": "Name", "width": 180},
+        {"key": "class_id", "label": "Class", "width": 110, "render": lambda r: db.class_name(r.get("class_id"))},
+        {"key": "roll_no", "label": "Roll No", "width": 90},
+        {"key": "father_name", "label": "Father", "width": 150},
+        {"key": "parent_contact", "label": "Contact", "width": 130},
+        {"key": "admission_date", "label": "Admitted", "width": 100, "render": lambda r: fmt_date(r.get("admission_date"))},
+        {"key": "status", "label": "Status", "width": 80},
+    ]
+    fields = [
+        {"key": "name", "label": "Full name", "required": True},
+        {"key": "class_id", "label": "Class", "type": "combo", "options": lambda: build_class_options(db)},
+        {"key": "roll_no", "label": "Roll number"},
+        {"key": "father_name", "label": "Father's name"},
+        {"key": "parent_contact", "label": "Parent contact"},
+        {"key": "admission_date", "label": "Admission date", "type": "date"},
+        {"key": "attendance", "label": "Attendance (%)", "type": "number"},
+        {"key": "status", "label": "Status", "type": "combo",
+         "options": [("Active", "active"), ("Inactive", "inactive")]},
+    ]
+    return CrudPanel(parent, db, "Students & Parents", "students", cols, fields,
+                     title_field="name", transform=student_transform(db))
+
+
+def make_classes_panel(parent, db):
+    cols = [
+        {"key": "grade", "label": "Grade", "width": 120},
+        {"key": "section", "label": "Section", "width": 90},
+        {"key": "subjects", "label": "Subjects", "width": 420,
+         "render": lambda r: ", ".join(r.get("subjects", []) if isinstance(r.get("subjects"), list) else [])},
+    ]
+    fields = [
+        {"key": "grade", "label": "Grade (e.g. Grade 10)", "required": True},
+        {"key": "section", "label": "Section (e.g. A)"},
+        {"key": "subjects_text", "label": "Subjects (comma separated)", "type": "memo"},
+    ]
+
+    def transform(data, row):
+        raw = data.pop("subjects_text", "")
+        subjects = [s.strip() for s in str(raw).replace("\n", ",").split(",") if s.strip()]
+        data["subjects"] = subjects
+        return data
+
+    panel = CrudPanel(parent, db, "Classes & Subjects", "classes", cols, fields,
+                      title_field="grade", transform=transform)
+
+    original_open = panel._open_form
+
+    def patched_open(row=None):
+        if row is not None:
+            row = dict(row)
+            row["subjects_text"] = ", ".join(row.get("subjects", []) if isinstance(row.get("subjects"), list) else [])
+        original_open(row)
+
+    panel._open_form = patched_open
+    return panel
+
+
+def make_staff_panel(parent, db):
+    cols = [
+        {"key": "name", "label": "Name", "width": 200},
+        {"key": "designation", "label": "Designation", "width": 180},
+        {"key": "staff_category", "label": "Category", "width": 130},
+        {"key": "status", "label": "Status", "width": 90},
+    ]
+    fields = [
+        {"key": "name", "label": "Full name", "required": True},
+        {"key": "designation", "label": "Designation (e.g. Math Teacher)"},
+        {"key": "staff_category", "label": "Category", "type": "combo",
+         "options": [("Teaching", "teaching"), ("Non-teaching", "non-teaching")]},
+        {"key": "status", "label": "Status", "type": "combo",
+         "options": [("Active", "active"), ("Inactive", "inactive")]},
+    ]
+    return CrudPanel(parent, db, "Teachers & Staff", "staff", cols, fields, title_field="name")
+
+
+def make_timetable_panel(parent, db):
+    cols = [
+        {"key": "day", "label": "Day", "width": 90},
+        {"key": "time", "label": "Time", "width": 100},
+        {"key": "subject", "label": "Subject", "width": 170},
+        {"key": "teacher", "label": "Teacher", "width": 150},
+        {"key": "room", "label": "Room", "width": 100},
+        {"key": "class_id", "label": "Class", "width": 110,
+         "render": lambda r: db.class_name(r.get("class_id")) if r.get("class_id") else "Ã¢â‚¬â€"},
+    ]
+    fields = [
+        {"key": "day", "label": "Day", "type": "combo",
+         "options": [("Today", "Today"), ("Tomorrow", "Tomorrow"), ("Wednesday", "Wednesday"),
+                     ("Thursday", "Thursday"), ("Friday", "Friday"), ("Saturday", "Saturday")]},
+        {"key": "time", "label": "Time (e.g. 09:00 AM)", "required": True},
+        {"key": "subject", "label": "Subject", "required": True},
+        {"key": "teacher", "label": "Teacher"},
+        {"key": "room", "label": "Room"},
+        {"key": "class_id", "label": "Class", "type": "combo", "options": lambda: build_class_options(db)},
+        {"key": "color", "label": "Color tag"},
+    ]
+    return CrudPanel(parent, db, "Timetable", "schedule_items", cols, fields, title_field="subject")
+
+
+
+# ---------------------------------------------------------------- attendance
+class AttendancePanel(ttk.Frame):
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        self.entity = tk.StringVar(value="students")
+        self.date_var = tk.StringVar(value=today_str())
+        self.class_var = tk.StringVar(value="")
+
+        top = ttk.Frame(self, padding=(12, 12, 12, 0))
+        top.pack(fill="x")
+        ttk.Label(top, text="Attendance", font=("Segoe UI", 15, "bold")).pack(side="left")
+        ttk.Button(top, text="Refresh", command=self.reload).pack(side="right")
+
+        ctrl = ttk.Frame(self, padding=(12, 8, 12, 4))
+        ctrl.pack(fill="x")
+        ttk.Label(ctrl, text="Date").pack(side="left")
+        ttk.Entry(ctrl, textvariable=self.date_var, width=14).pack(side="left", padx=(4, 12))
+        ttk.Radiobutton(ctrl, text="Students", variable=self.entity, value="students",
+                        command=self.reload).pack(side="left")
+        ttk.Radiobutton(ctrl, text="Staff", variable=self.entity, value="staff",
+                        command=self.reload).pack(side="left", padx=(4, 12))
+        ttk.Label(ctrl, text="Class").pack(side="left")
+        self.class_combo = ttk.Combobox(ctrl, textvariable=self.class_var, width=22, state="readonly")
+        self.class_combo.pack(side="left", padx=4)
+        self.class_combo.bind("<<ComboboxSelected>>", lambda _e: self.reload())
+        ttk.Button(ctrl, text="Save marks", command=self.save).pack(side="right")
+        ttk.Button(ctrl, text="Today", command=lambda: [self.date_var.set(today_str()), self.reload()]).pack(side="right", padx=4)
+
+        # scrollable rows
+        canvas = tk.Canvas(self, highlightthickness=0, background=COLORS["bg"])
+        self.rows_frame = ttk.Frame(canvas)
+        self.rows_frame.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        self.window = canvas.create_window((0, 0), window=self.rows_frame, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(self.window, width=e.width))
+        canvas.pack(side="left", fill="both", expand=True, padx=(12, 0), pady=8)
+        sb = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        sb.pack(side="right", fill="y", padx=(0, 12), pady=8)
+        canvas.configure(yscrollcommand=sb.set)
+        self.status = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.status, padding=(12, 0, 12, 6)).pack(anchor="w")
+
+        self.row_widgets = []
+        self.reload()
+
+    def _entity_options(self):
+        if self.entity.get() == "students":
+            return [(class_label(c), c) for c in self.db.classes()]
+        return [("All staff", None)]
+
+    def reload(self):
+        opts = self._entity_options()
+        self.class_combo.configure(values=[o[0] for o in opts])
+        if not self.class_var.get() and opts:
+            self.class_var.set(opts[0][0])
+        for w in self.rows_frame.winfo_children():
+            w.destroy()
+        self.row_widgets = []
+
+        if self.entity.get() == "students":
+            selected_label = self.class_var.get()
+            class_row = next((o[1] for o in opts if o[0] == selected_label), None)
+            rows = self.db.students()
+            if class_row:
+                rows = [s for s in rows if s.get("class_id") == class_row["id"]]
+        else:
+            rows = self.db.staff()
+
+        header = ttk.Frame(self.rows_frame)
+        header.pack(fill="x")
+        for text, width in (["Name", 32], ["Roll/Desig.", 16], ["Status", 16]):
+            ttk.Label(header, text=text, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+        if not rows:
+            ttk.Label(self.rows_frame, text="No records yet. Add students or staff first.",
+                      padding=12).pack()
+            return
+
+        existing = {}
+        for a in self.db.select("attendance"):
+            if a.get("date_str") == self.date_var.get() and a.get("entity_type") == self.entity.get():
+                existing[a.get("record_id")] = a.get("status")
+
+        for row in rows:
+            f = ttk.Frame(self.rows_frame, padding=2)
+            f.pack(fill="x")
+            ttk.Label(f, text=row.get("name", ""), width=34, anchor="w").pack(side="left", padx=4)
+            secondary = row.get("roll_no") if self.entity.get() == "students" else row.get("designation", "")
+            ttk.Label(f, text=str(secondary), width=16, anchor="w").pack(side="left", padx=4)
+            var = tk.StringVar(value=existing.get(row.get("id"), "present"))
+            cb = ttk.Combobox(f, textvariable=var, values=["present", "absent", "late", "leave"],
+                              state="readonly", width=10)
+            cb.pack(side="left", padx=4)
+            self.row_widgets.append((row.get("id"), var))
+
+    def save(self):
+        if not self.row_widgets:
+            return
+        d = self.date_var.get().strip() or today_str()
+        count = 0
+        for record_id, var in self.row_widgets:
+            self.db.upsert("attendance",
+                           {"date_str": d, "entity_type": self.entity.get(),
+                            "record_id": record_id, "status": var.get()},
+                           on_conflict="date_str,entity_type,record_id")
+            count += 1
+        self.status.set(f"Saved {count} record(s) for {d}.")
+
+
+
+# ---------------------------------------------------------------- exams & results
+class ExamsPanel(ttk.Frame):
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        head = ttk.Frame(self, padding=(12, 12, 12, 0))
+        head.pack(fill="x")
+        ttk.Label(head, text="Exams & Results", font=("Segoe UI", 15, "bold")).pack(side="left")
+        ttk.Button(head, text="Refresh", command=self.refresh).pack(side="right")
+
+        form = ttk.Frame(self, padding=(12, 8, 12, 4))
+        form.pack(fill="x")
+        self.session = tk.StringVar(value="2026-2027")
+        self.term = tk.StringVar(value="Term 1")
+        self.student_id = tk.StringVar(value="")
+        self.subject = tk.StringVar(value="")
+        self.obtained = tk.StringVar(value="0")
+        self.total = tk.StringVar(value="100")
+        ttk.Label(form, text="Session").grid(row=0, column=0, sticky="w", padx=4)
+        ttk.Entry(form, textvariable=self.session, width=12).grid(row=0, column=1, padx=4)
+        ttk.Label(form, text="Term").grid(row=0, column=2, sticky="w", padx=4)
+        ttk.Entry(form, textvariable=self.term, width=12).grid(row=0, column=3, padx=4)
+        ttk.Label(form, text="Student").grid(row=0, column=4, sticky="w", padx=4)
+        self.student_combo = ttk.Combobox(form, textvariable=self.student_id, width=28, state="readonly")
+        self.student_combo.grid(row=0, column=5, padx=4)
+        ttk.Label(form, text="Subject").grid(row=1, column=0, sticky="w", padx=4, pady=(6, 0))
+        ttk.Entry(form, textvariable=self.subject, width=16).grid(row=1, column=1, columnspan=3, sticky="ew", padx=4, pady=(6, 0))
+        ttk.Label(form, text="Obtained").grid(row=1, column=4, sticky="w", padx=4, pady=(6, 0))
+        ttk.Entry(form, textvariable=self.obtained, width=8).grid(row=1, column=5, sticky="w", padx=4, pady=(6, 0))
+        ttk.Label(form, text="Total").grid(row=1, column=6, sticky="w", padx=4, pady=(6, 0))
+        ttk.Entry(form, textvariable=self.total, width=8).grid(row=1, column=7, sticky="w", padx=4, pady=(6, 0))
+        ttk.Button(form, text="Add / update mark", command=self.add_mark).grid(row=1, column=8, padx=8, pady=(6, 0))
+        self.msg = tk.StringVar(value="")
+        ttk.Label(form, textvariable=self.msg, foreground="#16a34a").grid(row=2, column=0, columnspan=9, sticky="w", pady=(4, 0))
+
+        table_frame = ttk.Frame(self, padding=(12, 4, 12, 4))
+        table_frame.pack(fill="both", expand=True)
+        self.tree = ttk.Treeview(table_frame,
+                                 columns=["student", "subject", "term", "marks", "total"],
+                                 show="headings")
+        for key, label, width in [("student", "Student", 180), ("subject", "Subject", 140),
+                                   ("term", "Term", 90), ("marks", "Obtained", 80), ("total", "Total", 70)]:
+            self.tree.heading(key, text=label)
+            self.tree.column(key, width=width)
+        self.tree.pack(fill="both", expand=True)
+        row = ttk.Frame(self, padding=(12, 0, 12, 12))
+        row.pack(fill="x")
+        ttk.Button(row, text="Delete selected mark", command=self.delete_mark).pack(side="left")
+        ttk.Button(row, text="Generate result card (selected student)", command=self.result_card).pack(side="left", padx=8)
+
+        self.card = tk.Text(self, height=8, wrap="word", background="#0f172a", foreground="#e2e8f0",
+                            font=("Consolas", 10), relief="flat")
+        self.card.pack(fill="both", expand=False, padx=12, pady=(0, 12))
+        self.refresh()
+
+    def refresh(self):
+        opts = [(s["name"], s["id"]) for s in self.db.students()]
+        self.student_combo.configure(values=[o[0] for o in opts])
+        if not self.student_id.get() and opts:
+            self.student_id.set(opts[0][0])
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        label_to_name = {}
+        for m in self.db.select("exam_marks", "&order=created_at.desc"):
+            name = self.db.student_name(m.get("student_id"))
+            self.tree.insert("", "end", iid=str(m.get("id")),
+                             values=[name, m.get("subject", ""), m.get("term", ""),
+                                     m.get("marks_obtained", 0), m.get("total_marks", 0)])
+
+    def _student_id(self):
+        label = self.student_id.get()
+        return next((s["id"] for s in self.db.students() if s["name"] == label), None)
+
+    def add_mark(self):
+        sid = self._student_id()
+        if not sid:
+            messagebox.showerror("Pick a student", "Add a student first.")
+            return
+        data = {"session": self.session.get().strip(), "term": self.term.get().strip(),
+                "student_id": sid, "subject": self.subject.get().strip(),
+                "marks_obtained": float(self.obtained.get() or 0),
+                "total_marks": float(self.total.get() or 100)}
+        if not data["subject"]:
+            messagebox.showerror("Subject required", "Enter a subject.")
+            return
+        # update existing row for same session/term/student/subject, else insert
+        existing = next((m for m in self.db.select("exam_marks")
+                         if m.get("session") == data["session"] and m.get("term") == data["term"]
+                         and m.get("student_id") == sid and m.get("subject") == data["subject"]), None)
+        if existing:
+            self.db.update("exam_marks", existing["id"], data)
+        else:
+            self.db.insert("exam_marks", data)
+        self.msg.set(f"Saved {data['subject']} for {self.student_id.get()}")
+        self.refresh()
+
+    def delete_mark(self):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        self.db.delete("exam_marks", sel[0])
+        self.refresh()
+
+    def result_card(self):
+        sid = self._student_id()
+        if not sid:
+            messagebox.showerror("Pick a student", "Add a student first.")
+            return
+        session = self.session.get().strip()
+        marks = [m for m in self.db.select("exam_marks")
+                 if m.get("student_id") == sid and m.get("session") == session]
+        name = self.db.student_name(sid)
+        total_obt = sum(float(m.get("marks_obtained", 0) or 0) for m in marks)
+        total_max = sum(float(m.get("total_marks", 0) or 0) for m in marks)
+        pct = (total_obt / total_max * 100) if total_max else 0
+        lines = [f"RESULT CARD Ã¢â‚¬â€ {name}", f"Session: {session}    Generated: {datetime.now():%d %b %Y}\n",
+                 f"{'Subject':<22}{'Obtained':>10}{'Total':>10}"]
+        for m in marks:
+            lines.append(f"{str(m.get('subject','')):<22}{float(m.get('marks_obtained',0)):>10.1f}{float(m.get('total_marks',0)):>10.1f}")
+        lines.append(f"\n{'TOTAL':<22}{total_obt:>10.1f}{total_max:>10.1f}")
+        lines.append(f"Percentage: {pct:.1f}%   Grade: {self._grade_for(pct)}")
+        text = "\n".join(lines)
+        self.card.delete("1.0", "end")
+        self.card.insert("1.0", text)
+
+    @staticmethod
+    def _grade_for(pct):
+        if pct >= 90: return "A+"
+        if pct >= 80: return "A"
+        if pct >= 70: return "B"
+        if pct >= 60: return "C"
+        if pct >= 50: return "D"
+        return "F"
+
+
+# ---------------------------------------------------------------- fees
+def make_fees_panel(parent, db):
+    cols = [
+        {"key": "student_id", "label": "Student", "width": 180,
+         "render": lambda r: db.student_name(r.get("student_id"))},
+        {"key": "month_year", "label": "Month / Year", "width": 120},
+        {"key": "amount_paid", "label": "Amount paid", "width": 110,
+         "render": lambda r: f"${float(r.get('amount_paid', 0) or 0):,.2f}"},
+        {"key": "payment_date", "label": "Payment date", "width": 110,
+         "render": lambda r: fmt_date(r.get("payment_date"))},
+        {"key": "status", "label": "Status", "width": 80},
+    ]
+    fields = [
+        {"key": "student_id", "label": "Student", "type": "combo", "required": True,
+         "options": lambda: [(s["name"], s["id"]) for s in db.students()]},
+        {"key": "month_year", "label": "Month / Year (e.g. Nov 2026)", "required": True},
+        {"key": "amount_paid", "label": "Amount paid", "type": "number", "required": True},
+        {"key": "payment_date", "label": "Payment date", "type": "date"},
+        {"key": "status", "label": "Status", "type": "combo",
+         "options": [("Paid", "paid"), ("Pending", "pending"), ("Overdue", "overdue")]},
+    ]
+    return CrudPanel(parent, db, "Fees & Payments", "fees", cols, fields, title_field="month_year")
+
+
+# ---------------------------------------------------------------- library
+class LibraryPanel(ttk.Frame):
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        cols = [
+            {"key": "title", "label": "Title", "width": 220},
+            {"key": "author", "label": "Author", "width": 170},
+            {"key": "isbn", "label": "ISBN", "width": 120},
+            {"key": "status", "label": "Status", "width": 90},
+            {"key": "issued_to", "label": "Issued to", "width": 170,
+             "render": lambda r: db.student_name(r.get("issued_to")) if r.get("issued_to") else "Ã¢â‚¬â€"},
+        ]
+        fields = [
+            {"key": "title", "label": "Title", "required": True},
+            {"key": "author", "label": "Author"},
+            {"key": "isbn", "label": "ISBN"},
+            {"key": "status", "label": "Status", "type": "combo",
+             "options": [("Available", "available"), ("Issued", "issued")]},
+            {"key": "issued_to", "label": "Issued to (book bank)", "type": "combo",
+             "options": lambda: [("Available Ã¢â‚¬â€ not issued", "")] + [(s["name"], s["id"]) for s in db.students()]},
+        ]
+        self.panel = CrudPanel(self, db, "Library (Book Bank)", "library_books", cols, fields,
+                               title_field="title")
+        self.panel.pack(fill="both", expand=True)
+
+
+# ---------------------------------------------------------------- transport & hostel
+def make_routes_panel(parent, db):
+    cols = [
+        {"key": "route_name", "label": "Route", "width": 180},
+        {"key": "driver", "label": "Driver", "width": 160},
+        {"key": "vehicle_no", "label": "Vehicle No", "width": 120},
+        {"key": "passengers", "label": "Passengers", "width": 110,
+         "render": lambda r: str(sum(1 for p in db.select("transport_passengers") if p.get("route_id") == r.get("id")))},
+    ]
+    fields = [
+        {"key": "route_name", "label": "Route name (e.g. East City Route)", "required": True},
+        {"key": "driver", "label": "Driver name"},
+        {"key": "vehicle_no", "label": "Vehicle number"},
+    ]
+    actions = [("Assign studentÃ¢â‚¬Â¦", lambda: assign_passenger(parent.winfo_toplevel(), db))]
+    return CrudPanel(parent, db, "Transport Routes", "transport_routes", cols, fields,
+                     title_field="route_name", actions=actions)
+
+
+def assign_passenger(root, db):
+    win = tk.Toplevel(root)
+    win.title("Assign student to route")
+    win.transient(root)
+    win.grab_set()
+    win.resizable(False, False)
+    routes = db.select("transport_routes")
+    if not routes:
+        messagebox.showinfo("No routes", "Add a transport route first.", parent=win)
+        win.destroy()
+        return
+    ttk.Label(win, text="Route").grid(row=0, column=0, sticky="w", padx=12, pady=6)
+    route_var = tk.StringVar(value=routes[0]["route_name"])
+    ttk.Combobox(win, textvariable=route_var, values=[r["route_name"] for r in routes],
+                 state="readonly", width=34).grid(row=0, column=1, padx=12, pady=6)
+    ttk.Label(win, text="Student").grid(row=1, column=0, sticky="w", padx=12, pady=6)
+    students = db.students()
+    student_var = tk.StringVar()
+    ttk.Combobox(win, textvariable=student_var, values=[s["name"] for s in students],
+                 state="readonly", width=34).grid(row=1, column=1, padx=12, pady=6)
+
+    def save():
+        route = next((r for r in routes if r["route_name"] == route_var.get()), None)
+        student = next((s for s in students if s["name"] == student_var.get()), None)
+        if not route or not student:
+            messagebox.showerror("Pick both", "Choose a route and a student.", parent=win)
+            return
+        db.upsert("transport_passengers", {"route_id": route["id"], "student_id": student["id"]},
+                  on_conflict="route_id,student_id")
+        messagebox.showinfo("Assigned", f"{student['name']} assigned to {route['route_name']}.", parent=win)
+        win.destroy()
+
+    ttk.Button(win, text="Assign", command=save).grid(row=2, column=1, sticky="e", padx=12, pady=12)
+
+
+def make_hostel_panel(parent, db):
+    cols = [
+        {"key": "room_no", "label": "Room No", "width": 120},
+        {"key": "capacity", "label": "Capacity", "width": 90},
+        {"key": "occupants", "label": "Occupants", "width": 90,
+         "render": lambda r: f"{sum(1 for a in db.select('hostel_assignments') if a.get('room_id') == r.get('id'))}/{r.get('capacity')}"},
+    ]
+    fields = [
+        {"key": "room_no", "label": "Room number", "required": True},
+        {"key": "capacity", "label": "Capacity", "type": "number", "required": True},
+    ]
+    actions = [("Assign studentÃ¢â‚¬Â¦", lambda: assign_room(parent.winfo_toplevel(), db))]
+    return CrudPanel(parent, db, "Hostel Rooms", "hostel_rooms", cols, fields,
+                     title_field="room_no", actions=actions)
+
+
+def assign_room(root, db):
+    win = tk.Toplevel(root)
+    win.title("Assign student to room")
+    win.transient(root)
+    win.grab_set()
+    win.resizable(False, False)
+    rooms = db.select("hostel_rooms")
+    if not rooms:
+        messagebox.showinfo("No rooms", "Add a hostel room first.", parent=win)
+        win.destroy()
+        return
+    ttk.Label(win, text="Room").grid(row=0, column=0, sticky="w", padx=12, pady=6)
+    room_var = tk.StringVar(value=str(rooms[0]["room_no"]))
+    ttk.Combobox(win, textvariable=room_var, values=[str(r["room_no"]) for r in rooms],
+                 state="readonly", width=34).grid(row=0, column=1, padx=12, pady=6)
+    ttk.Label(win, text="Student").grid(row=1, column=0, sticky="w", padx=12, pady=6)
+    students = db.students()
+    student_var = tk.StringVar()
+    ttk.Combobox(win, textvariable=student_var, values=[s["name"] for s in students],
+                 state="readonly", width=34).grid(row=1, column=1, padx=12, pady=6)
+
+    def save():
+        room = next((r for r in rooms if str(r["room_no"]) == room_var.get()), None)
+        student = next((s for s in students if s["name"] == student_var.get()), None)
+        if not room or not student:
+            messagebox.showerror("Pick both", "Choose a room and a student.", parent=win)
+            return
+        current = [a for a in db.select("hostel_assignments") if a.get("room_id") == room["id"]]
+        if len(current) >= int(room.get("capacity", 1)):
+            messagebox.showerror("Room full", f"Room {room['room_no']} is at full capacity.", parent=win)
+            return
+        db.upsert("hostel_assignments", {"room_id": room["id"], "student_id": student["id"]},
+                  on_conflict="room_id,student_id")
+        messagebox.showinfo("Assigned", f"{student['name']} assigned to room {room['room_no']}.", parent=win)
+        win.destroy()
+
+    ttk.Button(win, text="Assign", command=save).grid(row=2, column=1, sticky="e", padx=12, pady=12)
+
+
+# ---------------------------------------------------------------- messages & notices
+def make_messages_panel(parent, db):
+    cols = [
+        {"key": "name", "label": "Name", "width": 160},
+        {"key": "msg", "label": "Message", "width": 380},
+        {"key": "time", "label": "Time", "width": 90},
+        {"key": "unread", "label": "Unread", "width": 60, "anchor": "center"},
+        {"key": "is_group", "label": "Group", "width": 60, "render": lambda r: "Yes" if r.get("is_group") else "No"},
+    ]
+    fields = [
+        {"key": "name", "label": "Name", "required": True},
+        {"key": "msg", "label": "Message", "type": "memo"},
+        {"key": "time", "label": "Time label (e.g. 10:24 AM)"},
+        {"key": "unread", "label": "Unread count", "type": "number"},
+        {"key": "is_group", "label": "Group?", "type": "combo", "options": [("No", False), ("Yes", True)]},
+    ]
+
+    def mark_all_read():
+        for m in db.select("messages"):
+            db.update("messages", m["id"], {"unread": 0})
+        panel.refresh()
+
+    panel = CrudPanel(parent, db, "Messages", "messages", cols, fields,
+                      title_field="name", actions=[("Mark all read", mark_all_read)])
+    return panel
+
+
+def make_notices_panel(parent, db):
+    cols = [
+        {"key": "type", "label": "Type", "width": 90},
+        {"key": "title", "label": "Title", "width": 300},
+        {"key": "time", "label": "When", "width": 160},
+        {"key": "accent", "label": "Color", "width": 70},
+    ]
+    fields = [
+        {"key": "type", "label": "Type", "type": "combo",
+         "options": [("Exam", "Exam"), ("Notice", "Notice"), ("Alert", "Alert"),
+                     ("Event", "Event"), ("Meeting", "Meeting")]},
+        {"key": "title", "label": "Title", "required": True},
+        {"key": "time", "label": "When (e.g. Tomorrow, 09:00 AM)"},
+        {"key": "accent", "label": "Accent color", "type": "combo",
+         "options": [("Cyan", "cyan"), ("Purple", "purple"), ("Amber", "amber"),
+                     ("Rose", "rose"), ("Emerald", "emerald")]},
+        {"key": "icon", "label": "Icon (lucide name)"},
+    ]
+    return CrudPanel(parent, db, "Notices & Events", "events", cols, fields, title_field="title")
+
+
+
+# ---------------------------------------------------------------- settings / profile
+class SchoolInfoPanel(ttk.Frame):
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        ttk.Label(self, text="School Settings", font=("Segoe UI", 15, "bold"), padding=12).pack(anchor="w")
+        self.name = tk.StringVar()
+        self.status = tk.StringVar()
+        self.teachers = tk.StringVar()
+        self.fees = tk.StringVar()
+        form = ttk.Frame(self, padding=12)
+        form.pack(anchor="w")
+        rows = [("School name", self.name, 40), ("School status", self.status, 20),
+                ("Total teachers", self.teachers, 12), ("Pending fees", self.fees, 20)]
+        for i, (label, var, width) in enumerate(rows):
+            ttk.Label(form, text=label).grid(row=i, column=0, sticky="w", pady=6, padx=4)
+            ttk.Entry(form, textvariable=var, width=width).grid(row=i, column=1, pady=6, padx=4)
+        ttk.Button(form, text="Save school info", command=self.save).grid(row=len(rows), column=1, sticky="e", pady=10)
+        self.msg = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.msg, foreground="#16a34a", padding=(12, 0)).pack(anchor="w")
+        self.load()
+
+    def load(self):
+        rows = self.db.select("settings")
+        row = rows[0] if rows else {}
+        self.name.set(row.get("school_name") or "")
+        self.status.set(row.get("status") or "active")
+        self.teachers.set(str(row.get("total_teachers") if row.get("total_teachers") is not None else ""))
+        self.fees.set(row.get("pending_fees") or "")
+
+    def save(self):
+        row = {"school_name": self.name.get().strip() or None,
+               "status": self.status.get().strip() or "active",
+               "updated_at": now()}
+        try:
+            row["total_teachers"] = int(self.teachers.get()) if self.teachers.get().strip() else None
+        except ValueError:
+            messagebox.showerror("Invalid number", "Total teachers must be a whole number.")
+            return
+        row["pending_fees"] = self.fees.get().strip() or None
+        rows = self.db.select("settings")
+        if rows:
+            self.db.update("settings", rows[0]["id"], row)
+        else:
+            row["id"] = SINGLETON_ID
+            self.db.insert("settings", row)
+        self.msg.set("Saved.")
+        self.load()
+
+
+class ProfilePanel(ttk.Frame):
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        ttk.Label(self, text="Principal Profile", font=("Segoe UI", 15, "bold"), padding=12).pack(anchor="w")
+        self.name = tk.StringVar()
+        self.role = tk.StringVar()
+        self.avatar = tk.StringVar()
+        form = ttk.Frame(self, padding=12)
+        form.pack(anchor="w")
+        rows = [("Full name", self.name, 45), ("Role / title", self.role, 45),
+                ("Avatar URL", self.avatar, 45)]
+        for i, (label, var, width) in enumerate(rows):
+            ttk.Label(form, text=label).grid(row=i, column=0, sticky="w", pady=6, padx=4)
+            ttk.Entry(form, textvariable=var, width=width).grid(row=i, column=1, pady=6, padx=4)
+        ttk.Button(form, text="Save profile", command=self.save).grid(row=len(rows), column=1, sticky="e", pady=10)
+        self.msg = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.msg, foreground="#16a34a", padding=(12, 0)).pack(anchor="w")
+        self.load()
+
+    def load(self):
+        rows = self.db.select("profiles")
+        row = rows[0] if rows else {}
+        self.name.set(row.get("full_name") or "")
+        self.role.set(row.get("role_title") or "")
+        self.avatar.set(row.get("avatar_url") or "")
+
+    def save(self):
+        row = {"full_name": self.name.get().strip() or None,
+               "role_title": self.role.get().strip() or None,
+               "avatar_url": self.avatar.get().strip() or None,
+               "updated_at": now()}
+        rows = self.db.select("profiles")
+        if rows:
+            self.db.update("profiles", rows[0]["id"], row)
+        else:
+            row["id"] = SINGLETON_ID
+            self.db.insert("profiles", row)
+        self.msg.set("Saved.")
+        self.load()
+
+
+def now():
+    return datetime.now().isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------- main window
+class App:
+    def __init__(self):
+        self.db = SchoolDB()
+        self.root = tk.Tk()
+        self.root.title(f"{APP_NAME} v{APP_VERSION}")
+        self.root.geometry("1380x860")
+        self.root.minsize(1100, 700)
+        self.root.configure(background=COLORS["bg"])
+
+        try:
+            ttk.Style().theme_use("clam")
+        except Exception:
+            pass
+        style = ttk.Style()
+        style.configure("TButton", font=("Segoe UI", 10), padding=(10, 4))
+        style.configure("Sidebar.TButton", background=COLORS["sidebar"], foreground="#e2e8f0",
+                        borderwidth=0, focusthickness=0, anchor="w", padding=(16, 10),
+                        font=("Segoe UI", 10))
+        style.map("Sidebar.TButton",
+                  background=[("active", COLORS["sidebar_hi"]), ("pressed", COLORS["accent"])],
+                  foreground=[("active", "#ffffff"), ("pressed", "#0f172a")])
+        style.configure("Treeview", rowheight=26, font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
+
+        self._build_sidebar()
+        self._build_statusbar()
+        self.content = tk.Frame(self.root, background=COLORS["bg"])
+        self.content.place(x=230, y=0, relwidth=1.0, relheight=1.0)
+        self.content.place_configure(width=1380 - 230, height=860 - 34)
+        self.panels = {}
+        self.show("dashboard")
+        self._tick_status()
+        self.root.mainloop()
+
+    # ---------- layout ----------
+    def _build_sidebar(self):
+        bar = tk.Frame(self.root, background=COLORS["sidebar"], width=230)
+        bar.pack(side="left", fill="y")
+        bar.pack_propagate(False)
+        tk.Label(bar, text="SCHOOL\nMANAGEMENT", bg=COLORS["sidebar"], fg=COLORS["accent"],
+                 font=("Segoe UI", 15, "bold"), justify="left").pack(fill="x", padx=18, pady=(18, 4))
+        tk.Label(bar, text="SYSTEM", bg=COLORS["sidebar"], fg="#64748b",
+                 font=("Segoe UI", 9, "bold")).pack(fill="x", padx=18, pady=(0, 12))
+        self.nav_items = [
+            ("dashboard", "Ã°Å¸ÂÂ   Dashboard & Reports"),
+            ("students", "Ã°Å¸Å½â€œ  Students & Parents"),
+            ("classes", "Ã°Å¸ÂÂ«  Classes & Subjects"),
+            ("staff", "Ã°Å¸Â§â€˜Ã¢â‚¬ÂÃ°Å¸ÂÂ«  Teachers & Staff"),
+            ("timetable", "Ã°Å¸â€”â€œ  Timetable"),
+            ("attendance", "Ã¢Å“â€¦  Attendance"),
+            ("exams", "Ã°Å¸â€œÂ  Exams & Results"),
+            ("fees", "Ã°Å¸â€™Â³  Fees & Payments"),
+            ("library", "Ã°Å¸â€œÅ¡  Library (Book Bank)"),
+            ("transport", "Ã°Å¸Å¡Å’  Transport"),
+            ("hostel", "Ã°Å¸â€ºÂ  Hostel"),
+            ("messages", "Ã°Å¸â€™Â¬  Messages"),
+            ("notices", "Ã°Å¸â€œÂ¢  Notices & Events"),
+            ("settings", "Ã°Å¸ÂÂ«  School Settings"),
+            ("profile", "Ã°Å¸â€˜Â¤  Principal Profile"),
+        ]
+        for key, label in self.nav_items:
+            btn = ttk.Button(bar, text=label, style="Sidebar.TButton",
+                             command=lambda k=key: self.show(k))
+            btn.pack(fill="x", padx=10, pady=1)
+        tk.Frame(bar, bg=COLORS["sidebar"], height=20).pack()
+        tk.Label(bar, text="School Dashboard v" + APP_VERSION, bg=COLORS["sidebar"],
+                 fg="#475569", font=("Segoe UI", 8)).pack(side="bottom", pady=10)
+
+    def _build_statusbar(self):
+        self.status = tk.Label(self.root, text="", background="#1e293b", foreground="#7dd3fc",
+                               anchor="w", padx=12, font=("Segoe UI", 9))
+        self.status.pack(side="bottom", fill="x")
+
+    def _tick_status(self):
+        state = "Ã¢â€”Â Online Ã¢â‚¬â€ synced with Supabase" if not self.db.offline else "Ã¢â€”â€¹ Offline Ã¢â‚¬â€ changes saved on this PC"
+        self.status.configure(text=state + "   |   Tip: double-click a row to edit")
+        self.root.after(2000, self._tick_status)
+
+    # ---------- panel switching ----------
+    def build_panel(self, key):
+        db = self.db
+        if key == "dashboard":
+            return DashboardPanel(self.content, db)
+        if key == "students":
+            return make_students_panel(self.content, db)
+        if key == "classes":
+            return make_classes_panel(self.content, db)
+        if key == "staff":
+            return make_staff_panel(self.content, db)
+        if key == "timetable":
+            return make_timetable_panel(self.content, db)
+        if key == "attendance":
+            return AttendancePanel(self.content, db)
+        if key == "exams":
+            return ExamsPanel(self.content, db)
+        if key == "fees":
+            return make_fees_panel(self.content, db)
+        if key == "library":
+            return LibraryPanel(self.content, db)
+        if key == "transport":
+            return make_routes_panel(self.content, db)
+        if key == "hostel":
+            return make_hostel_panel(self.content, db)
+        if key == "messages":
+            return make_messages_panel(self.content, db)
+        if key == "notices":
+            return make_notices_panel(self.content, db)
+        if key == "settings":
+            return SchoolInfoPanel(self.content, db)
+        if key == "profile":
+            return ProfilePanel(self.content, db)
+        return ttk.Frame(self.content)
+
+    def show(self, key):
+        if key in self.panels:
+            for w in self.panels[key].winfo_children():
+                w.destroy()
+            self.panels[key].destroy()
+        panel = self.build_panel(key)
+        panel.pack(fill="both", expand=True)
+        self.panels[key] = panel
+
+
+def main():
+    App()
+
+
+if __name__ == "__main__":
+    main()
+
+

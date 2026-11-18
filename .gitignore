@@ -16,3 +16,8 @@ android/.idea/
 *.iml
 .DS_Store
 npm-debug.log*
+
+__pycache__/
+*.pyc
+school-management-system/school_local.json
+

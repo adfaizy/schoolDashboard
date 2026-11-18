@@ -10,7 +10,7 @@ export function HomeView({
   controller, onEdit, onDelete, onNotify, onTabChange,
 }: ViewProps & { onTabChange: (tab: string) => void }) {
   const { data } = controller
-  const name = data.profile?.full_name ?? 'School Principal'
+  const name = data.profile?.full_name ?? data.settings?.school_name ?? 'School Principal'
   const attendance = data.students.length
     ? Math.round(data.students.reduce((sum, s) => sum + s.attendance, 0) / data.students.length)
     : 0

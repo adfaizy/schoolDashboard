@@ -1,6 +1,13 @@
-# School Dashboard — Android APK (no login, self-updating)
+﻿# School Dashboard â€” Android APK (no login, self-updating) + Desktop SMS
 
-This version opens **straight into the dashboard** — no sign-in screen, no username, no password.
+This repository contains two apps that share one Supabase database:
+
+1. **This Android app** (React + Capacitor) â€” the principal's pocket dashboard.
+2. **`school-management-system/`** â€” a full Python (Tkinter) school management desktop app.
+
+Both read and write the same tables, so changes on the desktop appear in the APK and vice-versa.
+
+This version opens **straight into the dashboard** â€” no sign-in screen, no username, no password.
 
 - **Install once.** After that, code updates are delivered over the air (OTA) whenever the phone is online.
 - Data is **local-first**: every add/edit/delete saves on the device immediately, so the app works offline. When Supabase is ready it also syncs to the cloud.
@@ -15,23 +22,23 @@ This version opens **straight into the dashboard** — no sign-in screen, no use
 
 ```
 you push to GitHub (main)
-        │
-        ▼
+        â”‚
+        â–¼
 GitHub Actions builds the web app
-        │
-        ├──► publishes app-update.json + updates/<commit>.zip to the gh-pages branch
-        │
-        └──► (optional) deploys the same web app to Vercel
-        │
-        ▼
+        â”‚
+        â”œâ”€â”€â–º publishes app-update.json + updates/<commit>.zip to the gh-pages branch
+        â”‚
+        â””â”€â”€â–º (optional) deploys the same web app to Vercel
+        â”‚
+        â–¼
 installed APKs check app-update.json on launch / every 30 min
-        │
-        ▼
-new bundle downloads in the background → "Restart to apply" (or restart the app)
+        â”‚
+        â–¼
+new bundle downloads in the background â†’ "Restart to apply" (or restart the app)
 ```
 
 The APK loads its bundled assets offline, so it never shows a blank screen without internet.
-Updates are staged to the device and used on the next launch — no Play Store, no reinstall.
+Updates are staged to the device and used on the next launch â€” no Play Store, no reinstall.
 
 The update source is baked into the APK from `.env`:
 
@@ -58,7 +65,7 @@ You can verify the live manifest at:
 
 Either:
 
-- In Vercel, **Import Git Repository** → `adfaizy/schoolDashboard`. Framework preset **Vite**.
+- In Vercel, **Import Git Repository** â†’ `adfaizy/schoolDashboard`. Framework preset **Vite**.
   `vercel.json` is already configured. Every push to `main` will redeploy automatically, or
 - Add these repository secrets so the GitHub Action deploys via CLI:
   `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
@@ -74,18 +81,23 @@ If you ever reset the project, open `supabase/schema-noauth.sql` and run it once
 SQL Editor, then reopen the app.
 
 > **Security note:** this no-login schema uses public read/write policies. Anyone with the
-> publishable key can read or change the data — use it for demos or trusted apps only.
+> publishable key can read or change the data â€” use it for demos or trusted apps only.
 
 ---
 
 ## Using the app
 
-- **Home** — student count and average attendance are computed live. The gear icon edits
+- **Home** â€” student count and average attendance are computed live. The gear icon edits
   teacher count / pending fees; the bell or **Add** button adds an event; tap an event card to edit.
-- **Students** — search filters the live list; **+ Add** creates; tap a row or the pencil to edit; trash deletes.
-- **Academics** — filter by day; **+ Add** for a class; tap a class card to edit it.
-- **Messages** — **+ New** starts a conversation; tap a conversation to reply; pencil/trash edit or delete.
-- **Profile** — change principal name/title, take a camera photo, retry Supabase sync, and
+- **Students** â€” search filters the live list; **+ Add** creates; tap a row or the pencil to edit; trash deletes.
+- **Classes (Academics)** â€” timetable per day; **+ Add** for a class; tap a card to edit it.
+- **Manage** â€” the school management hub with every module:
+  Classes & Subjects Â· Teachers & Staff Â· Exams & Results Â· Fees & Payments Â·
+  Library (Book Bank) Â· Transport routes + passengers Â· Hostel rooms + full-capacity check Â·
+  **Attendance** (mark students/staff present/absent/late/leave per date) Â· **Reports** (fees, books, attendance summary).
+  Each module supports add / edit / delete, and the list syncs with the desktop app.
+- **Messages** â€” **+ New** starts a conversation; tap a conversation to reply; pencil/trash edit or delete.
+- **Profile** â€” change principal name/title, take a camera photo, retry Supabase sync, and
   **Check for updates** / **Restart to apply update**. The installed version and update source are shown at the bottom.
 
 ---
@@ -97,7 +109,7 @@ SQL Editor, then reopen the app.
 3. Install and launch **School Dashboard**.
 
 Requires Android 5.1+ (API 22). Debug-signed build for testing. After this one install,
-code updates arrive automatically — do not sideload a new APK unless the native code changes.
+code updates arrive automatically â€” do not sideload a new APK unless the native code changes.
 
 ---
 
@@ -117,22 +129,25 @@ npx.cmd cap sync android
 Copy-Item "D:\school\school-dashboard\android\app\build\outputs\apk\debug\app-debug.apk" "D:\school\SchoolDashboard.apk" -Force
 ```
 
-For web-only changes, just `git push origin main` — the APK updates itself.
+For web-only changes, just `git push origin main` â€” the APK updates itself.
 
 ---
 
 ## Project structure
 
-- `src/App.tsx` — navigation, modals, toast, no auth gating
-- `src/views/` — the five data-driven dashboard screens
-- `src/hooks/useDashboardData.ts` — local/Supabase data layer and CRUD
-- `src/hooks/useAppUpdate.ts` — OTA update checks and staging
-- `src/lib/updates.ts` — Capawesome Live Update self-hosted client
-- `src/lib/localData.ts` — device storage with sample data
-- `src/lib/supabase.ts` — connection config (`.env` or in-app)
-- `scripts/build-update.mjs` — builds `app-update.json` + versioned ZIP
-- `.github/workflows/deploy.yml` — builds and publishes updates on every push
-- `vercel.json` — Vercel deployment config
-- `supabase/schema-noauth.sql` — public-access tables (no login)
-- `android/` — Capacitor native project
-- `D:\school\build-tools\` — portable JDK 17 + Android SDK
+- `src/App.tsx` â€” navigation, modals, toast, no auth gating
+- `src/views/` â€” the five data-driven dashboard screens
+- `src/hooks/useDashboardData.ts` â€” local/Supabase data layer and CRUD
+- `src/hooks/useAppUpdate.ts` â€” OTA update checks and staging
+- `src/lib/updates.ts` â€” Capawesome Live Update self-hosted client
+- `src/lib/localData.ts` â€” device storage with sample data
+- `src/lib/supabase.ts` â€” connection config (`.env` or in-app)
+- `scripts/build-update.mjs` â€” builds `app-update.json` + versioned ZIP
+- `.github/workflows/deploy.yml` â€” builds and publishes updates on every push
+- `vercel.json` â€” Vercel deployment config
+- `supabase/schema-noauth.sql` â€” base tables (no login)
+- `supabase/schema-modules.sql` â€” school management module tables (run after schema-noauth.sql)
+- `school-management-system/\` â€” Python (Tkinter) desktop school management app
+- `android/` â€” Capacitor native project
+- `D:\school\build-tools\` â€” portable JDK 17 + Android SDK
+

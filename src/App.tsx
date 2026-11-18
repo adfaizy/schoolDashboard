@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { BookOpen, Home, MessageSquare, User, Users } from 'lucide-react'
+import { BookOpen, Grid3X3, Home, MessageSquare, User, Users } from 'lucide-react'
 import { DataModal, type FormValues } from './components/DataModal'
 import { SetupScreen } from './components/SetupScreen'
 import { Toast, type ToastState } from './components/Toast'
@@ -8,6 +8,8 @@ import { useAppUpdate, type UpdateController } from './hooks/useAppUpdate'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
 import { AcademicsView } from './views/AcademicsView'
 import { HomeView } from './views/HomeView'
+import { ManageView } from './views/ManageView'
+import { ModuleScreen } from './views/ModuleScreen'
 import { MessagesView } from './views/MessagesView'
 import { ProfileView } from './views/ProfileView'
 import { StudentsView } from './views/StudentsView'
@@ -29,6 +31,7 @@ function Dashboard({
   onConnect: () => void
 }) {
   const [activeTab, setActiveTab] = useState('home')
+  const [moduleId, setModuleId] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
@@ -149,16 +152,26 @@ function Dashboard({
 
   const shared = { controller, onEdit: setModal, onDelete: setDeleteTarget, onNotify: showToast, update }
 
+  function selectTab(tab: string) {
+    setActiveTab(tab)
+    setModuleId(null)
+  }
+
   return (
     <>
       {controller.loading && <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-400/80 animate-pulse z-[90]" />}
       <Toast toast={toast} onDismiss={dismissToast} />
 
       <div className="flex-1 overflow-y-auto pb-24 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-        {activeTab === 'home' && <HomeView {...shared} onTabChange={setActiveTab} />}
+        {activeTab === 'home' && <HomeView {...shared} onTabChange={selectTab} />}
         {activeTab === 'students' && <StudentsView {...shared} />}
         {activeTab === 'academics' && <AcademicsView {...shared} />}
         {activeTab === 'messages' && <MessagesView {...shared} />}
+        {activeTab === 'manage' && (
+          moduleId
+            ? <ModuleScreen moduleId={moduleId} shared={shared} onBack={() => setModuleId(null)} />
+            : <ManageView {...shared} onOpen={setModuleId} />
+        )}
         {activeTab === 'profile' && <ProfileView {...shared} onConnect={onConnect} />}
       </div>
 
@@ -167,14 +180,15 @@ function Dashboard({
           {[
             { id: 'home', icon: <Home size={22} />, label: 'Home' },
             { id: 'students', icon: <Users size={22} />, label: 'Students' },
-            { id: 'academics', icon: <BookOpen size={22} />, label: 'Academics' },
+            { id: 'academics', icon: <BookOpen size={22} />, label: 'Classes' },
+            { id: 'manage', icon: <Grid3X3 size={22} />, label: 'Manage' },
             { id: 'messages', icon: <MessageSquare size={22} />, label: 'Messages' },
             { id: 'profile', icon: <User size={22} />, label: 'Profile' },
           ].map((item) => {
             const isActive = activeTab === item.id
             return (
               <li key={item.id}>
-                <button onClick={() => setActiveTab(item.id)} className="flex flex-col items-center gap-1.5 relative p-2">
+                <button onClick={() => selectTab(item.id)} className="flex flex-col items-center gap-1.5 relative p-2">
                   <div className={`${isActive ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'} transition-colors relative`}>
                     {item.icon}
                     {isActive && (
