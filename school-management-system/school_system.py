@@ -1,14 +1,14 @@
-﻿"""
-School Management System â€” Desktop Edition
+"""
+School Management System — Desktop Edition
 =========================================
 
 A fully functional school management system built with Tkinter.
 Talks to the same Supabase database as the School Dashboard Android app,
 and falls back to a local JSON file when offline.
 
-Modules: Dashboard/Reports Â· Students Â· Classes & Subjects Â· Staff & Teachers Â·
-Timetable Â· Attendance Â· Exams & Results Â· Fees Â· Library (Book Bank) Â·
-Transport Â· Hostel Â· Messages Â· Notices Â· School Settings Â· Principal Profile
+Modules: Dashboard/Reports · Students · Classes & Subjects · Staff & Teachers ·
+Timetable · Attendance · Exams & Results · Fees · Library (Book Bank) ·
+Transport · Hostel · Messages · Notices · School Settings · Principal Profile
 
 Run with:  python school_system.py   (or double-click run.bat)
 """
@@ -140,7 +140,7 @@ class CrudPanel(ttk.Frame):
 
     def _open_form(self, row=None):
         top = tk.Toplevel(self)
-        top.title(("Edit" if row else "Add") + " â€” " + self.title)
+        top.title(("Edit" if row else "Add") + " — " + self.title)
         top.transient(self.winfo_toplevel())
         top.grab_set()
         top.resizable(False, False)
@@ -268,7 +268,7 @@ class DashboardPanel(ttk.Frame):
         self.cards.columnconfigure(tuple(range(len(stats))), weight=1)
 
         # text report
-        lines = [f"School Management Report â€” {datetime.now():%d %b %Y %H:%M}\n"]
+        lines = [f"School Management Report — {datetime.now():%d %b %Y %H:%M}\n"]
         lines.append(f"Total students: {len(students)}   Total staff: {len(staff)}   Classes: {len(classes)}\n")
         attendance = self.db.select("attendance")
         present = sum(1 for a in attendance if a.get("status") == "present")
@@ -284,14 +284,14 @@ class DashboardPanel(ttk.Frame):
             lines.append("  No students yet.")
         lines.append("\nUpcoming events:")
         for e in events:
-            lines.append(f"  â€¢ {e.get('type','')}: {e.get('title','')} â€” {e.get('time','')}")
+            lines.append(f"  • {e.get('type','')}: {e.get('title','')} — {e.get('time','')}")
         if not events:
             lines.append("  No events scheduled.")
         lines.append("\nFee history preview (latest 10):")
         fees = sorted(fees, key=lambda f: str(f.get("payment_date", "")), reverse=True)[:10]
         for f in fees:
             name = self.db.student_name(f.get("student_id"))
-            lines.append(f"  â€¢ {name} â€” {f.get('month_year','')} â€” ${float(f.get('amount_paid',0) or 0):,.2f}")
+            lines.append(f"  • {name} — {f.get('month_year','')} — ${float(f.get('amount_paid',0) or 0):,.2f}")
         if not fees:
             lines.append("  No payments recorded.")
         self.report.delete("1.0", "end")
@@ -405,7 +405,7 @@ def make_timetable_panel(parent, db):
         {"key": "teacher", "label": "Teacher", "width": 150},
         {"key": "room", "label": "Room", "width": 100},
         {"key": "class_id", "label": "Class", "width": 110,
-         "render": lambda r: db.class_name(r.get("class_id")) if r.get("class_id") else "Ã¢â‚¬â€"},
+         "render": lambda r: db.class_name(r.get("class_id")) if r.get("class_id") else "—"},
     ]
     fields = [
         {"key": "day", "label": "Day", "type": "combo",
@@ -420,6 +420,208 @@ def make_timetable_panel(parent, db):
     ]
     return CrudPanel(parent, db, "Timetable", "schedule_items", cols, fields, title_field="subject")
 
+
+
+# ---------------------------------------------------------------- class planner
+PERIOD_DEFS = [
+    (1, "P-1", "8:45 AM", "9:30 AM"),
+    (2, "P-2", "9:30 AM", "10:00 AM"),
+    (3, "P-3", "10:00 AM", "10:30 AM"),
+    (4, "P-4", "10:30 AM", "11:00 AM"),
+    (5, "P-5", "11:00 AM", "11:30 AM"),
+    (6, "P-6", "12:00 PM", "12:30 PM"),
+    (7, "P-7", "12:30 PM", "1:00 PM"),
+    (8, "P-8", "1:00 PM", "1:30 PM"),
+]
+BREAK_AFTER = 5
+DEFAULT_SUBJECTS = [
+    "URDU", "ENGLISH", "MATH", "SCIENCE", "ISLAMIAT", "HIST & GEOG", "COMPUTER",
+    "T.Q", "NAZRA QURAN", "SOCIAL STUDIES", "GAMES", "DRAWING", "G.KN",
+]
+
+
+def class_sort_key(klass):
+    grade = str(klass.get("grade", ""))
+    digits = "".join(ch for ch in grade if ch.isdigit())
+    number = int(digits) if digits else -1
+    low = grade.lower()
+    if number >= 0:
+        return (0, -number, low)
+    if low.startswith("nursery"):
+        return (1, 0, low)
+    if low.startswith("ece"):
+        return (1, 1, low)
+    return (1, 2, low)
+
+
+class ClassPlannerPanel(ttk.Frame):
+    """Class x period grid, matching the printed school timetable."""
+
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        head = ttk.Frame(self, padding=(12, 12, 12, 0))
+        head.pack(fill="x")
+        ttk.Label(head, text="Class Planner", font=("Segoe UI", 15, "bold")).pack(side="left")
+        ttk.Label(head, text="  tap any cell to assign a subject and teacher",
+                  foreground="#64748b").pack(side="left")
+        ttk.Button(head, text="Refresh", command=self.render).pack(side="right")
+
+        canvas = tk.Canvas(self, highlightthickness=0, background=COLORS["bg"])
+        self.inner = ttk.Frame(canvas)
+        self.inner.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        self.window = canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(self.window, width=e.width))
+        canvas.pack(side="left", fill="both", expand=True, padx=(12, 0), pady=8)
+        sb = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        sb.pack(side="right", fill="y", padx=(0, 12), pady=8)
+        canvas.configure(yscrollcommand=sb.set)
+
+        self.status = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.status, padding=(12, 0, 12, 8)).pack(anchor="w")
+
+        self.render()
+
+    def render(self):
+        for w in self.inner.winfo_children():
+            w.destroy()
+
+        classes = sorted(self.db.classes(), key=class_sort_key)
+        rows = self.db.select("schedule_items")
+        cells = {
+            (r.get("class_id"), r.get("period_no")): r
+            for r in rows
+            if r.get("class_id") is not None and r.get("period_no") is not None
+        }
+
+        if not classes:
+            ttk.Label(self.inner, text="No classes yet. Add classes in Classes & Subjects first.",
+                      padding=16).grid(row=0, column=0, sticky="w")
+            return
+
+        header_bg = "#0f172a"
+        tk.Label(self.inner, text="Class", bg=header_bg, fg="#ffffff", width=14, pady=6,
+                 font=("Segoe UI", 9, "bold"), anchor="w").grid(row=0, column=0, padx=1, pady=1, sticky="nsew")
+        column = 1
+        for number, label, start, end in PERIOD_DEFS:
+            frame = tk.Frame(self.inner, bg=header_bg)
+            frame.grid(row=0, column=column, padx=1, pady=1, sticky="nsew")
+            tk.Label(frame, text=label, bg=header_bg, fg="#67e8f9",
+                     font=("Segoe UI", 9, "bold")).pack(pady=(6, 0))
+            tk.Label(frame, text=f"{start}-{end}", bg=header_bg, fg="#cbd5e1",
+                     font=("Segoe UI", 7)).pack(pady=(0, 6))
+            column += 1
+            if number == BREAK_AFTER:
+                tk.Label(self.inner, text="BREAK\n11:30\n12:00", bg="#fde68a", fg="#92400e",
+                         width=7, font=("Segoe UI", 7, "bold"), justify="center").grid(
+                    row=0, column=column, padx=1, pady=1, sticky="nsew")
+                column += 1
+
+        for index, klass in enumerate(classes, start=1):
+            tk.Label(self.inner, text=class_label(klass), bg="#e2e8f0", fg="#0f172a", width=14,
+                     anchor="w", padx=8, pady=8, font=("Segoe UI", 10, "bold")).grid(
+                row=index, column=0, padx=1, pady=1, sticky="nsew")
+            column = 1
+            for number, label, start, end in PERIOD_DEFS:
+                cell = cells.get((klass.get("id"), number))
+                subject = (cell or {}).get("subject", "") or ""
+                teacher = (cell or {}).get("teacher", "") or ""
+                text = f"{subject}\n{teacher}" if subject else "+"
+                button = tk.Button(
+                    self.inner, text=text, width=14, height=3, relief="flat", bd=0,
+                    bg="#ffffff", fg="#1d4ed8" if subject else "#94a3b8",
+                    activebackground="#e0f2fe", font=("Segoe UI", 8),
+                    wraplength=110, justify="center",
+                    command=lambda k=klass, p=number: self.assign(k, p),
+                )
+                button.grid(row=index, column=column, padx=1, pady=1, sticky="nsew")
+                column += 1
+                if number == BREAK_AFTER:
+                    tk.Label(self.inner, text="BREAK", bg="#fef3c7", fg="#b45309",
+                             font=("Segoe UI", 7, "bold")).grid(row=index, column=column, padx=1, pady=1, sticky="nsew")
+                    column += 1
+
+    def assign(self, klass, period_no):
+        number, label, start, end = next(p for p in PERIOD_DEFS if p[0] == period_no)
+        rows = self.db.select("schedule_items")
+        existing = next((r for r in rows
+                         if r.get("class_id") == klass.get("id") and r.get("period_no") == period_no), None)
+
+        win = tk.Toplevel(self.winfo_toplevel())
+        win.title("Assign Period")
+        win.transient(self.winfo_toplevel())
+        win.grab_set()
+        win.resizable(False, False)
+
+        body = ttk.Frame(win, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Assign Period", font=("Segoe UI", 12, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(body, text=f"Class: {class_label(klass)}").grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, text=f"Period: {label} ({start}-{end})").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        subjects = []
+        for value in (klass.get("subjects") or []):
+            if value and value not in subjects:
+                subjects.append(value)
+        for row in rows:
+            if row.get("class_id") == klass.get("id") and row.get("subject") and row["subject"] not in subjects:
+                subjects.append(row["subject"])
+        for value in DEFAULT_SUBJECTS:
+            if value not in subjects:
+                subjects.append(value)
+
+        current = (existing or {}).get("subject", "") or ""
+        subject_var = tk.StringVar(value=current)
+        ttk.Label(body, text="Subject").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        ttk.Combobox(body, textvariable=subject_var, values=subjects, state="readonly",
+                     width=32).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        teachers = []
+        for member in self.db.staff():
+            name = member.get("name", "")
+            if name and name not in teachers:
+                teachers.append(name)
+        current_teacher = (existing or {}).get("teacher", "") or ""
+        if current_teacher and current_teacher not in teachers:
+            teachers.append(current_teacher)
+        teacher_var = tk.StringVar(value=current_teacher)
+        ttk.Label(body, text="Teacher").grid(row=5, column=0, sticky="w", pady=(0, 2))
+        ttk.Combobox(body, textvariable=teacher_var, values=teachers, state="readonly",
+                     width=32).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+
+        def save():
+            payload = {
+                "day": "Daily",
+                "time": f"{start} – {end}",
+                "subject": subject_var.get().strip(),
+                "teacher": teacher_var.get().strip(),
+                "room": "",
+                "color": "cyan",
+                "class_id": klass.get("id"),
+                "period_no": period_no,
+            }
+            if existing:
+                self.db.update("schedule_items", existing["id"], payload)
+            else:
+                self.db.insert("schedule_items", payload)
+            win.destroy()
+            self.render()
+            self.status.set(f"Saved {class_label(klass)} {label}.")
+
+        def clear():
+            if existing:
+                self.db.delete("schedule_items", existing["id"])
+            win.destroy()
+            self.render()
+            self.status.set(f"Cleared {class_label(klass)} {label}.")
+
+        buttons = ttk.Frame(body)
+        buttons.grid(row=7, column=0, columnspan=2, sticky="ew")
+        ttk.Button(buttons, text="Clear", command=clear).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=win.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(buttons, text="Save Period", command=save).pack(side="right")
 
 
 # ---------------------------------------------------------------- attendance
@@ -646,7 +848,7 @@ class ExamsPanel(ttk.Frame):
         total_obt = sum(float(m.get("marks_obtained", 0) or 0) for m in marks)
         total_max = sum(float(m.get("total_marks", 0) or 0) for m in marks)
         pct = (total_obt / total_max * 100) if total_max else 0
-        lines = [f"RESULT CARD Ã¢â‚¬â€ {name}", f"Session: {session}    Generated: {datetime.now():%d %b %Y}\n",
+        lines = [f"RESULT CARD — {name}", f"Session: {session}    Generated: {datetime.now():%d %b %Y}\n",
                  f"{'Subject':<22}{'Obtained':>10}{'Total':>10}"]
         for m in marks:
             lines.append(f"{str(m.get('subject','')):<22}{float(m.get('marks_obtained',0)):>10.1f}{float(m.get('total_marks',0)):>10.1f}")
@@ -701,7 +903,7 @@ class LibraryPanel(ttk.Frame):
             {"key": "isbn", "label": "ISBN", "width": 120},
             {"key": "status", "label": "Status", "width": 90},
             {"key": "issued_to", "label": "Issued to", "width": 170,
-             "render": lambda r: db.student_name(r.get("issued_to")) if r.get("issued_to") else "Ã¢â‚¬â€"},
+             "render": lambda r: db.student_name(r.get("issued_to")) if r.get("issued_to") else "—"},
         ]
         fields = [
             {"key": "title", "label": "Title", "required": True},
@@ -710,7 +912,7 @@ class LibraryPanel(ttk.Frame):
             {"key": "status", "label": "Status", "type": "combo",
              "options": [("Available", "available"), ("Issued", "issued")]},
             {"key": "issued_to", "label": "Issued to (book bank)", "type": "combo",
-             "options": lambda: [("Available Ã¢â‚¬â€ not issued", "")] + [(s["name"], s["id"]) for s in db.students()]},
+             "options": lambda: [("Available — not issued", "")] + [(s["name"], s["id"]) for s in db.students()]},
         ]
         self.panel = CrudPanel(self, db, "Library (Book Bank)", "library_books", cols, fields,
                                title_field="title")
@@ -731,7 +933,7 @@ def make_routes_panel(parent, db):
         {"key": "driver", "label": "Driver name"},
         {"key": "vehicle_no", "label": "Vehicle number"},
     ]
-    actions = [("Assign studentÃ¢â‚¬Â¦", lambda: assign_passenger(parent.winfo_toplevel(), db))]
+    actions = [("Assign student…", lambda: assign_passenger(parent.winfo_toplevel(), db))]
     return CrudPanel(parent, db, "Transport Routes", "transport_routes", cols, fields,
                      title_field="route_name", actions=actions)
 
@@ -782,7 +984,7 @@ def make_hostel_panel(parent, db):
         {"key": "room_no", "label": "Room number", "required": True},
         {"key": "capacity", "label": "Capacity", "type": "number", "required": True},
     ]
-    actions = [("Assign studentÃ¢â‚¬Â¦", lambda: assign_room(parent.winfo_toplevel(), db))]
+    actions = [("Assign student…", lambda: assign_room(parent.winfo_toplevel(), db))]
     return CrudPanel(parent, db, "Hostel Rooms", "hostel_rooms", cols, fields,
                      title_field="room_no", actions=actions)
 
@@ -1016,21 +1218,22 @@ class App:
         tk.Label(bar, text="SYSTEM", bg=COLORS["sidebar"], fg="#64748b",
                  font=("Segoe UI", 9, "bold")).pack(fill="x", padx=18, pady=(0, 12))
         self.nav_items = [
-            ("dashboard", "Ã°Å¸ÂÂ   Dashboard & Reports"),
-            ("students", "Ã°Å¸Å½â€œ  Students & Parents"),
-            ("classes", "Ã°Å¸ÂÂ«  Classes & Subjects"),
-            ("staff", "Ã°Å¸Â§â€˜Ã¢â‚¬ÂÃ°Å¸ÂÂ«  Teachers & Staff"),
-            ("timetable", "Ã°Å¸â€”â€œ  Timetable"),
-            ("attendance", "Ã¢Å“â€¦  Attendance"),
-            ("exams", "Ã°Å¸â€œÂ  Exams & Results"),
-            ("fees", "Ã°Å¸â€™Â³  Fees & Payments"),
-            ("library", "Ã°Å¸â€œÅ¡  Library (Book Bank)"),
-            ("transport", "Ã°Å¸Å¡Å’  Transport"),
-            ("hostel", "Ã°Å¸â€ºÂ  Hostel"),
-            ("messages", "Ã°Å¸â€™Â¬  Messages"),
-            ("notices", "Ã°Å¸â€œÂ¢  Notices & Events"),
-            ("settings", "Ã°Å¸ÂÂ«  School Settings"),
-            ("profile", "Ã°Å¸â€˜Â¤  Principal Profile"),
+            ("dashboard", "🏠  Dashboard & Reports"),
+            ("students", "🎓  Students & Parents"),
+            ("classes", "🏫  Classes & Subjects"),
+            ("staff", "🧑‍🏫  Teachers & Staff"),
+            ("timetable", "🗓  Timetable"),
+            ("planner", "🗂  Class Planner"),
+            ("attendance", "âœ…  Attendance"),
+            ("exams", "📝  Exams & Results"),
+            ("fees", "💳  Fees & Payments"),
+            ("library", "📚  Library (Book Bank)"),
+            ("transport", "🚌  Transport"),
+            ("hostel", "🛏  Hostel"),
+            ("messages", "💬  Messages"),
+            ("notices", "📢  Notices & Events"),
+            ("settings", "🏫  School Settings"),
+            ("profile", "👤  Principal Profile"),
         ]
         for key, label in self.nav_items:
             btn = ttk.Button(bar, text=label, style="Sidebar.TButton",
@@ -1046,7 +1249,7 @@ class App:
         self.status.pack(side="bottom", fill="x")
 
     def _tick_status(self):
-        state = "Ã¢â€”Â Online Ã¢â‚¬â€ synced with Supabase" if not self.db.offline else "Ã¢â€”â€¹ Offline Ã¢â‚¬â€ changes saved on this PC"
+        state = "● Online — synced with Supabase" if not self.db.offline else "○ Offline — changes saved on this PC"
         self.status.configure(text=state + "   |   Tip: double-click a row to edit")
         self.root.after(2000, self._tick_status)
 
@@ -1063,6 +1266,8 @@ class App:
             return make_staff_panel(self.content, db)
         if key == "timetable":
             return make_timetable_panel(self.content, db)
+        if key == "planner":
+            return ClassPlannerPanel(self.content, db)
         if key == "attendance":
             return AttendancePanel(self.content, db)
         if key == "exams":

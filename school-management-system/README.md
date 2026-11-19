@@ -1,7 +1,7 @@
-﻿# School Management System â€” Desktop Edition
+# School Management System — Desktop Edition
 
 A fully functional school management system written in pure Python (Tkinter + the standard
-library â€” no pip installs required). It uses the **same Supabase database as the
+library — no pip installs required). It uses the **same Supabase database as the
 School Dashboard Android APK**, so data entered here also appears on the phone and vice-versa.
 
 Works offline too: if Supabase is unreachable, changes are stored in `school_local.json`
@@ -26,6 +26,7 @@ Requires Python 3.9+ with Tkinter (included with the standard Windows installer)
 | Classes & Subjects | Grade + section + comma-separated subject list |
 | Teachers & Staff | Name, designation, teaching / non-teaching, status |
 | Timetable | Day, time, subject, teacher, room, class, colour tag |
+| Class Planner | Class × period grid (P-1…P-8 + break). Tap a cell to assign subject and teacher |
 | Attendance | Mark present / absent / late / leave per date, students or staff |
 | Exams & Results | Session, term, per-subject marks; generates a printable result card |
 | Fees & Payments | Record monthly payments per student, see history |
@@ -48,5 +49,5 @@ All data lives in your Supabase project (`yecmhcwgnivgxjihrhsa`) in these tables
 
 Schema: `../supabase/schema-noauth.sql` + `schema-modules.sql`.
 
-The same tables power the Android app â€” that is the "shared database" both apps use.
+The same tables power the Android app — that is the "shared database" both apps use.
 

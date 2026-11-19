@@ -25,6 +25,7 @@ export type ScheduleItem = {
   color: string
   created_at: string
   class_id?: string | null
+  period_no?: number | null
 }
 
 export type ChatMessage = {

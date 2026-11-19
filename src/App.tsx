@@ -6,7 +6,7 @@ import { Toast, type ToastState } from './components/Toast'
 import { modalConfig, type DeleteTarget, type ModalState } from './lib/forms'
 import { useAppUpdate, type UpdateController } from './hooks/useAppUpdate'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
-import { AcademicsView } from './views/AcademicsView'
+import { TimetableView } from './views/TimetableView'
 import { HomeView } from './views/HomeView'
 import { ManageView } from './views/ManageView'
 import { ModuleScreen } from './views/ModuleScreen'
@@ -165,7 +165,7 @@ function Dashboard({
       <div className="flex-1 overflow-y-auto pb-24 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
         {activeTab === 'home' && <HomeView {...shared} onTabChange={selectTab} />}
         {activeTab === 'students' && <StudentsView {...shared} />}
-        {activeTab === 'academics' && <AcademicsView {...shared} />}
+        {activeTab === 'academics' && <TimetableView {...shared} />}
         {activeTab === 'messages' && <MessagesView {...shared} />}
         {activeTab === 'manage' && (
           moduleId
@@ -180,7 +180,7 @@ function Dashboard({
           {[
             { id: 'home', icon: <Home size={22} />, label: 'Home' },
             { id: 'students', icon: <Users size={22} />, label: 'Students' },
-            { id: 'academics', icon: <BookOpen size={22} />, label: 'Classes' },
+            { id: 'academics', icon: <BookOpen size={22} />, label: 'Timetable' },
             { id: 'manage', icon: <Grid3X3 size={22} />, label: 'Manage' },
             { id: 'messages', icon: <MessageSquare size={22} />, label: 'Messages' },
             { id: 'profile', icon: <User size={22} />, label: 'Profile' },
