@@ -1374,7 +1374,10 @@ class AuthDialog(tk.Toplevel):
         self.resizable(False, False)
         self.configure(bg=COLORS["bg"])
         self.transient(parent)
+        self.deiconify()
         self.grab_set()
+        self.lift()
+        self.focus_force()
         self.result = None
         self.mode = "login"
 
