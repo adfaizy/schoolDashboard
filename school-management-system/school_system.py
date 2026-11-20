@@ -247,55 +247,62 @@ class DashboardPanel(ttk.Frame):
             w.destroy()
         students = self.db.students()
         staff = self.db.staff()
+        teaching = [s for s in staff if s.get("staff_category") == "teaching" and s.get("status") != "inactive"]
         classes = self.db.classes()
         books = self.db.select("library_books")
-        issued = sum(1 for b in books if b.get("status") == "issued")
+        issued = sum(1 for b in books if b.get("issued_to"))
         msgs = self.db.select("messages")
         unread = sum(int(m.get("unread", 0) or 0) for m in msgs)
         fees = self.db.select("fees")
         fees_total = sum(float(f.get("amount_paid", 0) or 0) for f in fees)
+        pending = sum(float(f.get("amount_paid", 0) or 0) for f in fees if f.get("status") != "paid")
+        # pending fees = unpaid fee rows' amounts? Android pendingFees sums fees where status != paid amount_paid? 
+        # Actually pendingFees sums amount_paid? Let's check Android pendingFees.
+        attendance = self.db.select("attendance")
+        student_att = [a for a in attendance if a.get("entity_type") == "students"]
+        marked = len({a.get("record_id") for a in student_att})
+        present = sum(1 for a in student_att if a.get("status") in ("present", "late"))
+        rate = round(present / len(student_att) * 100, 1) if student_att else None
         events = self.db.select("events")
         stats = [
             ("Students", len(students)),
-            ("Staff & Teachers", len(staff)),
+            ("Teaching Staff", len(teaching)),
             ("Classes", len(classes)),
             ("Books Issued", issued),
             ("Unread Messages", unread),
-            ("Fees Collected", f"${fees_total:,.0f}"),
+            ("Fees Collected", f"Rs {fees_total:,.0f}"),
+            ("Fees Pending", f"Rs {pending:,.0f}"),
+            ("Attendance", (f"{rate}%" if rate is not None else "—")),
         ]
         for col, (label, value) in enumerate(stats):
             self.stat_card(self.cards, label, value, col)
         self.cards.columnconfigure(tuple(range(len(stats))), weight=1)
 
-        # text report
-        lines = [f"School Management Report — {datetime.now():%d %b %Y %H:%M}\n"]
-        lines.append(f"Total students: {len(students)}   Total staff: {len(staff)}   Classes: {len(classes)}\n")
-        attendance = self.db.select("attendance")
-        present = sum(1 for a in attendance if a.get("status") == "present")
-        absent = sum(1 for a in attendance if a.get("status") == "absent")
-        lines.append(f"Attendance records: {len(attendance)}  (present {present}, absent {absent})")
-        lines.append("\nStudents not marked present today:")
+        lines = [f"School Management Report — {datetime.now():%d %b %Y %H:%M}\\n"]
+        lines.append(f"Total students: {len(students)}   Teaching staff: {len(teaching)}   Classes: {len(classes)}\\n")
+        lines.append(f"Attendance records: {len(student_att)}  (present+late {present})  rate {rate if rate is not None else '—'}%")
+        lines.append("\\nStudents not marked present today:")
         if students:
             today = today_str()
-            marked = {a.get("record_id") for a in attendance if a.get("date_str") == today and a.get("entity_type") == "students"}
-            missing = [s["name"] for s in students if s["id"] not in marked]
+            marked_today = {a.get("record_id") for a in student_att if a.get("date_str") == today}
+            missing = [s["name"] for s in students if s["id"] not in marked_today]
             lines.append("  " + (", ".join(missing[:20]) if missing else "All students marked today."))
         else:
             lines.append("  No students yet.")
-        lines.append("\nUpcoming events:")
+        lines.append("\\nUpcoming events:")
         for e in events:
             lines.append(f"  • {e.get('type','')}: {e.get('title','')} — {e.get('time','')}")
         if not events:
             lines.append("  No events scheduled.")
-        lines.append("\nFee history preview (latest 10):")
-        fees = sorted(fees, key=lambda f: str(f.get("payment_date", "")), reverse=True)[:10]
-        for f in fees:
+        lines.append("\\nFee history preview (latest 10):")
+        fees_sorted = sorted(fees, key=lambda f: str(f.get("payment_date", "")), reverse=True)[:10]
+        for f in fees_sorted:
             name = self.db.student_name(f.get("student_id"))
-            lines.append(f"  • {name} — {f.get('month_year','')} — ${float(f.get('amount_paid',0) or 0):,.2f}")
-        if not fees:
+            lines.append(f"  • {name} — {f.get('month_year','')} — Rs {float(f.get('amount_paid',0) or 0):,.2f}")
+        if not fees_sorted:
             lines.append("  No payments recorded.")
         self.report.delete("1.0", "end")
-        self.report.insert("1.0", "\n".join(lines))
+        self.report.insert("1.0", "\\n".join(lines))
 
 
 # ---------------------------------------------------------------- students
@@ -305,7 +312,28 @@ def build_student_map(db):
 def build_class_options(db):
     return [(class_label(c), c["id"]) for c in db.classes()]
 
-def class_by_id(db, class_id):
+def student_attendance_rate(db, student_id):
+    rows = [a for a in db.select("attendance")
+            if a.get("entity_type") == "students" and a.get("record_id") == student_id]
+    if not rows:
+        return None
+    marked = sum(1 for a in rows if a.get("status") in ("present", "absent", "late", "leave"))
+    good = sum(1 for a in rows if a.get("status") in ("present", "late"))
+    if not marked:
+        return None
+    return round(good / marked * 100, 1)
+
+
+def status_for_attendance(rate):
+    if rate is None:
+        return "No records"
+    if rate >= 90:
+        return "Excellent"
+    if rate >= 75:
+        return "Good"
+    if rate >= 60:
+        return "Warning"
+    return "Critical"
     for c in db.classes():
         if c.get("id") == class_id:
             return c
@@ -328,7 +356,8 @@ def make_students_panel(parent, db):
         {"key": "father_name", "label": "Father", "width": 150},
         {"key": "parent_contact", "label": "Contact", "width": 130},
         {"key": "admission_date", "label": "Admitted", "width": 100, "render": lambda r: fmt_date(r.get("admission_date"))},
-        {"key": "status", "label": "Status", "width": 80},
+        {"key": "status", "label": "Status", "width": 90,
+         "render": lambda r: status_for_attendance(student_attendance_rate(db, r.get("id")))},
     ]
     fields = [
         {"key": "name", "label": "Full name", "required": True},
@@ -337,9 +366,6 @@ def make_students_panel(parent, db):
         {"key": "father_name", "label": "Father's name"},
         {"key": "parent_contact", "label": "Parent contact"},
         {"key": "admission_date", "label": "Admission date", "type": "date"},
-        {"key": "attendance", "label": "Attendance (%)", "type": "number"},
-        {"key": "status", "label": "Status", "type": "combo",
-         "options": [("Active", "active"), ("Inactive", "inactive")]},
     ]
     return CrudPanel(parent, db, "Students & Parents", "students", cols, fields,
                      title_field="name", transform=student_transform(db))
@@ -376,6 +402,24 @@ def make_classes_panel(parent, db):
         original_open(row)
 
     panel._open_form = patched_open
+
+    def guarded_delete():
+        row = panel.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a row first.")
+            return
+        students = [s for s in db.students() if s.get("class_id") == row.get("id")]
+        periods = [p for p in db.select("schedule_items") if p.get("class_id") == row.get("id")]
+        if students or periods:
+            messagebox.showerror("Cannot delete",
+                                 f"{class_label(row)} still has {len(students)} student(s) and "
+                                 f"{len(periods)} timetable period(s). Remove them first.")
+            return
+        if messagebox.askyesno("Delete", f"Delete: {class_label(row)}?"):
+            db.delete("classes", row.get("id"))
+            panel.refresh()
+
+    panel.delete = guarded_delete
     return panel
 
 
@@ -394,7 +438,25 @@ def make_staff_panel(parent, db):
         {"key": "status", "label": "Status", "type": "combo",
          "options": [("Active", "active"), ("Inactive", "inactive")]},
     ]
-    return CrudPanel(parent, db, "Teachers & Staff", "staff", cols, fields, title_field="name")
+    panel = CrudPanel(parent, db, "Teachers & Staff", "staff", cols, fields, title_field="name")
+
+    def guarded_delete():
+        row = panel.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a row first.")
+            return
+        periods = [p for p in db.select("schedule_items") if p.get("teacher") == row.get("name")]
+        if periods:
+            messagebox.showerror("Cannot delete",
+                                 f"{row.get('name')} is still assigned to {len(periods)} timetable period(s). "
+                                 "Reassign those periods first.")
+            return
+        if messagebox.askyesno("Delete", f"Delete: {row.get('name')}?"):
+            db.delete("staff", row.get("id"))
+            panel.refresh()
+
+    panel.delete = guarded_delete
+    return panel
 
 
 def make_timetable_panel(parent, db):
@@ -409,11 +471,17 @@ def make_timetable_panel(parent, db):
     ]
     fields = [
         {"key": "day", "label": "Day", "type": "combo",
-         "options": [("Today", "Today"), ("Tomorrow", "Tomorrow"), ("Wednesday", "Wednesday"),
-                     ("Thursday", "Thursday"), ("Friday", "Friday"), ("Saturday", "Saturday")]},
+         "options": [("Daily", "Daily"), ("Monday", "Monday"), ("Tuesday", "Tuesday"),
+                     ("Wednesday", "Wednesday"), ("Thursday", "Thursday"), ("Friday", "Friday"),
+                     ("Saturday", "Saturday")]},
         {"key": "time", "label": "Time (e.g. 09:00 AM)", "required": True},
-        {"key": "subject", "label": "Subject", "required": True},
-        {"key": "teacher", "label": "Teacher"},
+        {"key": "subject", "label": "Subject", "type": "combo", "required": True,
+         "options": lambda: [(s, s) for s in sorted({s for c in db.classes()
+                                    for s in (c.get("subjects") or []) if s})],
+        },
+        {"key": "teacher", "label": "Teacher", "type": "combo",
+         "options": lambda: [(m["name"], m["name"]) for m in db.staff()
+                             if m.get("staff_category") == "teaching" and m.get("status") != "inactive"]},
         {"key": "room", "label": "Room"},
         {"key": "class_id", "label": "Class", "type": "combo", "options": lambda: build_class_options(db)},
         {"key": "color", "label": "Color tag"},
@@ -434,10 +502,6 @@ PERIOD_DEFS = [
     (8, "P-8", "1:00 PM", "1:30 PM"),
 ]
 BREAK_AFTER = 5
-DEFAULT_SUBJECTS = [
-    "URDU", "ENGLISH", "MATH", "SCIENCE", "ISLAMIAT", "HIST & GEOG", "COMPUTER",
-    "T.Q", "NAZRA QURAN", "SOCIAL STUDIES", "GAMES", "DRAWING", "G.KN",
-]
 
 
 def class_sort_key(klass):
@@ -568,9 +632,6 @@ class ClassPlannerPanel(ttk.Frame):
         for row in rows:
             if row.get("class_id") == klass.get("id") and row.get("subject") and row["subject"] not in subjects:
                 subjects.append(row["subject"])
-        for value in DEFAULT_SUBJECTS:
-            if value not in subjects:
-                subjects.append(value)
 
         current = (existing or {}).get("subject", "") or ""
         subject_var = tk.StringVar(value=current)
@@ -580,6 +641,10 @@ class ClassPlannerPanel(ttk.Frame):
 
         teachers = []
         for member in self.db.staff():
+            if member.get("staff_category") != "teaching":
+                continue
+            if member.get("status") == "inactive":
+                continue
             name = member.get("name", "")
             if name and name not in teachers:
                 teachers.append(name)
@@ -690,7 +755,7 @@ class AttendancePanel(ttk.Frame):
             if class_row:
                 rows = [s for s in rows if s.get("class_id") == class_row["id"]]
         else:
-            rows = self.db.staff()
+            rows = [s for s in self.db.staff() if s.get("status") != "inactive"]
 
         header = ttk.Frame(self.rows_frame)
         header.pack(fill="x")
@@ -747,6 +812,7 @@ class ExamsPanel(ttk.Frame):
         form.pack(fill="x")
         self.session = tk.StringVar(value="2026-2027")
         self.term = tk.StringVar(value="Term 1")
+        self.class_var = tk.StringVar(value="")
         self.student_id = tk.StringVar(value="")
         self.subject = tk.StringVar(value="")
         self.obtained = tk.StringVar(value="0")
@@ -754,19 +820,26 @@ class ExamsPanel(ttk.Frame):
         ttk.Label(form, text="Session").grid(row=0, column=0, sticky="w", padx=4)
         ttk.Entry(form, textvariable=self.session, width=12).grid(row=0, column=1, padx=4)
         ttk.Label(form, text="Term").grid(row=0, column=2, sticky="w", padx=4)
-        ttk.Entry(form, textvariable=self.term, width=12).grid(row=0, column=3, padx=4)
-        ttk.Label(form, text="Student").grid(row=0, column=4, sticky="w", padx=4)
-        self.student_combo = ttk.Combobox(form, textvariable=self.student_id, width=28, state="readonly")
-        self.student_combo.grid(row=0, column=5, padx=4)
-        ttk.Label(form, text="Subject").grid(row=1, column=0, sticky="w", padx=4, pady=(6, 0))
-        ttk.Entry(form, textvariable=self.subject, width=16).grid(row=1, column=1, columnspan=3, sticky="ew", padx=4, pady=(6, 0))
-        ttk.Label(form, text="Obtained").grid(row=1, column=4, sticky="w", padx=4, pady=(6, 0))
-        ttk.Entry(form, textvariable=self.obtained, width=8).grid(row=1, column=5, sticky="w", padx=4, pady=(6, 0))
-        ttk.Label(form, text="Total").grid(row=1, column=6, sticky="w", padx=4, pady=(6, 0))
-        ttk.Entry(form, textvariable=self.total, width=8).grid(row=1, column=7, sticky="w", padx=4, pady=(6, 0))
-        ttk.Button(form, text="Add / update mark", command=self.add_mark).grid(row=1, column=8, padx=8, pady=(6, 0))
+        ttk.Combobox(form, textvariable=self.term, values=["Term 1", "Term 2", "Final Term"],
+                     state="readonly", width=12).grid(row=0, column=3, padx=4)
+        ttk.Label(form, text="Class").grid(row=0, column=4, sticky="w", padx=4)
+        self.class_combo = ttk.Combobox(form, textvariable=self.class_var, width=16, state="readonly")
+        self.class_combo.grid(row=0, column=5, padx=4)
+        self.class_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_class_change())
+        ttk.Label(form, text="Student").grid(row=1, column=0, sticky="w", padx=4, pady=(6, 0))
+        self.student_combo = ttk.Combobox(form, textvariable=self.student_id, width=34, state="readonly")
+        self.student_combo.grid(row=1, column=1, columnspan=5, sticky="ew", padx=4, pady=(6, 0))
+        self.student_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_student_change())
+        ttk.Label(form, text="Subject").grid(row=2, column=0, sticky="w", padx=4, pady=(6, 0))
+        self.subject_combo = ttk.Combobox(form, textvariable=self.subject, width=22, state="readonly")
+        self.subject_combo.grid(row=2, column=1, columnspan=3, sticky="ew", padx=4, pady=(6, 0))
+        ttk.Label(form, text="Obtained").grid(row=2, column=4, sticky="w", padx=4, pady=(6, 0))
+        ttk.Entry(form, textvariable=self.obtained, width=8).grid(row=2, column=5, sticky="w", padx=4, pady=(6, 0))
+        ttk.Label(form, text="Total").grid(row=2, column=6, sticky="w", padx=4, pady=(6, 0))
+        ttk.Entry(form, textvariable=self.total, width=8).grid(row=2, column=7, sticky="w", padx=4, pady=(6, 0))
+        ttk.Button(form, text="Add / update mark", command=self.add_mark).grid(row=2, column=8, padx=8, pady=(6, 0))
         self.msg = tk.StringVar(value="")
-        ttk.Label(form, textvariable=self.msg, foreground="#16a34a").grid(row=2, column=0, columnspan=9, sticky="w", pady=(4, 0))
+        ttk.Label(form, textvariable=self.msg, foreground="#16a34a").grid(row=3, column=0, columnspan=9, sticky="w", pady=(4, 0))
 
         table_frame = ttk.Frame(self, padding=(12, 4, 12, 4))
         table_frame.pack(fill="both", expand=True)
@@ -783,19 +856,78 @@ class ExamsPanel(ttk.Frame):
         ttk.Button(row, text="Delete selected mark", command=self.delete_mark).pack(side="left")
         ttk.Button(row, text="Generate result card (selected student)", command=self.result_card).pack(side="left", padx=8)
 
-        self.card = tk.Text(self, height=8, wrap="word", background="#0f172a", foreground="#e2e8f0",
+        self.card = tk.Text(self, height=10, wrap="word", background="#0f172a", foreground="#e2e8f0",
                             font=("Consolas", 10), relief="flat")
         self.card.pack(fill="both", expand=False, padx=12, pady=(0, 12))
         self.refresh()
 
+    def _students_for_class(self):
+        rows = self.db.students()
+        label = self.class_var.get()
+        if label:
+            klass = next((c for c in self.db.classes() if class_label(c) == label), None)
+            if klass:
+                rows = [s for s in rows if s.get("class_id") == klass.get("id")]
+        return rows
+
+    def _selected_student_id(self):
+        label = self.student_id.get()
+        for s in self.db.students():
+            klass = self.db.class_name(s.get("class_id")) if hasattr(self.db, "class_name") else None
+            display = s["name"]
+            if klass:
+                display = f"{s['name']}  ({klass})"
+            if display == label or s["name"] == label:
+                return s["id"]
+        # fallback: strip class suffix
+        name = label.split("  (")[0]
+        return next((s["id"] for s in self.db.students() if s["name"] == name), None)
+
+    def _on_class_change(self):
+        students = self._students_for_class()
+        opts = []
+        for s in students:
+            klass = self.db.class_name(s.get("class_id")) if hasattr(self.db, "class_name") else ""
+            opts.append(f"{s['name']}  ({klass})" if klass else s["name"])
+        self.student_combo.configure(values=opts)
+        if opts:
+            self.student_id.set(opts[0])
+        else:
+            self.student_id.set("")
+        self._on_student_change()
+
+    def _on_student_change(self):
+        sid = self._selected_student_id()
+        subjects = []
+        if sid:
+            student = next((s for s in self.db.students() if s["id"] == sid), None)
+            klass = None
+            if student and student.get("class_id"):
+                klass = next((c for c in self.db.classes() if c["id"] == student["class_id"]), None)
+            if klass:
+                subjects = list(klass.get("subjects") or [])
+        self.subject_combo.configure(values=subjects)
+        if subjects and self.subject.get() not in subjects:
+            self.subject.set(subjects[0])
+        if not subjects:
+            self.subject.set("")
+
     def refresh(self):
-        opts = [(s["name"], s["id"]) for s in self.db.students()]
-        self.student_combo.configure(values=[o[0] for o in opts])
-        if not self.student_id.get() and opts:
-            self.student_id.set(opts[0][0])
+        classes = sorted(self.db.classes(), key=class_sort_key)
+        self.class_combo.configure(values=[""] + [class_label(c) for c in classes])
+        if not self.class_var.get() and classes:
+            pass
+        opts = self._students_for_class() if self.class_var.get() else self.db.students()
+        student_opts = []
+        for s in (opts if self.class_var.get() else self.db.students()):
+            klass = self.db.class_name(s.get("class_id")) if hasattr(self.db, "class_name") else ""
+            student_opts.append(f"{s['name']}  ({klass})" if klass else s["name"])
+        self.student_combo.configure(values=student_opts)
+        if student_opts and not self.student_id.get():
+            self.student_id.set(student_opts[0])
+        self._on_student_change()
         for i in self.tree.get_children():
             self.tree.delete(i)
-        label_to_name = {}
         for m in self.db.select("exam_marks", "&order=created_at.desc"):
             name = self.db.student_name(m.get("student_id"))
             self.tree.insert("", "end", iid=str(m.get("id")),
@@ -803,22 +935,29 @@ class ExamsPanel(ttk.Frame):
                                      m.get("marks_obtained", 0), m.get("total_marks", 0)])
 
     def _student_id(self):
-        label = self.student_id.get()
-        return next((s["id"] for s in self.db.students() if s["name"] == label), None)
+        return self._selected_student_id()
 
     def add_mark(self):
         sid = self._student_id()
         if not sid:
             messagebox.showerror("Pick a student", "Add a student first.")
             return
-        data = {"session": self.session.get().strip(), "term": self.term.get().strip(),
-                "student_id": sid, "subject": self.subject.get().strip(),
-                "marks_obtained": float(self.obtained.get() or 0),
-                "total_marks": float(self.total.get() or 100)}
-        if not data["subject"]:
-            messagebox.showerror("Subject required", "Enter a subject.")
+        subject = self.subject.get().strip()
+        if not subject:
+            messagebox.showerror("Subject required", "Pick a subject for this student's class.")
             return
-        # update existing row for same session/term/student/subject, else insert
+        try:
+            obtained = float(self.obtained.get() or 0)
+            total = float(self.total.get() or 100)
+        except ValueError:
+            messagebox.showerror("Invalid number", "Marks must be numbers.")
+            return
+        if total <= 0 or obtained < 0 or obtained > total:
+            messagebox.showerror("Invalid marks", f"Obtained must be between 0 and {total}.")
+            return
+        data = {"session": self.session.get().strip(), "term": self.term.get().strip(),
+                "student_id": sid, "subject": subject,
+                "marks_obtained": obtained, "total_marks": total}
         existing = next((m for m in self.db.select("exam_marks")
                          if m.get("session") == data["session"] and m.get("term") == data["term"]
                          and m.get("student_id") == sid and m.get("subject") == data["subject"]), None)
@@ -842,13 +981,17 @@ class ExamsPanel(ttk.Frame):
             messagebox.showerror("Pick a student", "Add a student first.")
             return
         session = self.session.get().strip()
+        term = self.term.get().strip()
         marks = [m for m in self.db.select("exam_marks")
-                 if m.get("student_id") == sid and m.get("session") == session]
+                 if m.get("student_id") == sid and m.get("session") == session and m.get("term") == term]
+        if not marks:
+            marks = [m for m in self.db.select("exam_marks")
+                     if m.get("student_id") == sid and m.get("session") == session]
         name = self.db.student_name(sid)
         total_obt = sum(float(m.get("marks_obtained", 0) or 0) for m in marks)
         total_max = sum(float(m.get("total_marks", 0) or 0) for m in marks)
         pct = (total_obt / total_max * 100) if total_max else 0
-        lines = [f"RESULT CARD — {name}", f"Session: {session}    Generated: {datetime.now():%d %b %Y}\n",
+        lines = [f"RESULT CARD — {name}", f"Session: {session}  Term: {term}  Generated: {datetime.now():%d %b %Y}\n",
                  f"{'Subject':<22}{'Obtained':>10}{'Total':>10}"]
         for m in marks:
             lines.append(f"{str(m.get('subject','')):<22}{float(m.get('marks_obtained',0)):>10.1f}{float(m.get('total_marks',0)):>10.1f}")
@@ -875,7 +1018,7 @@ def make_fees_panel(parent, db):
          "render": lambda r: db.student_name(r.get("student_id"))},
         {"key": "month_year", "label": "Month / Year", "width": 120},
         {"key": "amount_paid", "label": "Amount paid", "width": 110,
-         "render": lambda r: f"${float(r.get('amount_paid', 0) or 0):,.2f}"},
+         "render": lambda r: f"Rs {float(r.get('amount_paid', 0) or 0):,.2f}"},
         {"key": "payment_date", "label": "Payment date", "width": 110,
          "render": lambda r: fmt_date(r.get("payment_date"))},
         {"key": "status", "label": "Status", "width": 80},
@@ -915,7 +1058,7 @@ class LibraryPanel(ttk.Frame):
              "options": lambda: [("Available — not issued", "")] + [(s["name"], s["id"]) for s in db.students()]},
         ]
         self.panel = CrudPanel(self, db, "Library (Book Bank)", "library_books", cols, fields,
-                               title_field="title")
+                               title_field="title", transform=lambda data, row: (data.update({"status": "issued" if data.get("issued_to") else "available"}) or data))
         self.panel.pack(fill="both", expand=True)
 
 
@@ -1085,12 +1228,9 @@ class SchoolInfoPanel(ttk.Frame):
         ttk.Label(self, text="School Settings", font=("Segoe UI", 15, "bold"), padding=12).pack(anchor="w")
         self.name = tk.StringVar()
         self.status = tk.StringVar()
-        self.teachers = tk.StringVar()
-        self.fees = tk.StringVar()
         form = ttk.Frame(self, padding=12)
         form.pack(anchor="w")
-        rows = [("School name", self.name, 40), ("School status", self.status, 20),
-                ("Total teachers", self.teachers, 12), ("Pending fees", self.fees, 20)]
+        rows = [("School name", self.name, 40), ("School status", self.status, 20)]
         for i, (label, var, width) in enumerate(rows):
             ttk.Label(form, text=label).grid(row=i, column=0, sticky="w", pady=6, padx=4)
             ttk.Entry(form, textvariable=var, width=width).grid(row=i, column=1, pady=6, padx=4)
@@ -1104,19 +1244,11 @@ class SchoolInfoPanel(ttk.Frame):
         row = rows[0] if rows else {}
         self.name.set(row.get("school_name") or "")
         self.status.set(row.get("status") or "active")
-        self.teachers.set(str(row.get("total_teachers") if row.get("total_teachers") is not None else ""))
-        self.fees.set(row.get("pending_fees") or "")
 
     def save(self):
         row = {"school_name": self.name.get().strip() or None,
                "status": self.status.get().strip() or "active",
                "updated_at": now()}
-        try:
-            row["total_teachers"] = int(self.teachers.get()) if self.teachers.get().strip() else None
-        except ValueError:
-            messagebox.showerror("Invalid number", "Total teachers must be a whole number.")
-            return
-        row["pending_fees"] = self.fees.get().strip() or None
         rows = self.db.select("settings")
         if rows:
             self.db.update("settings", rows[0]["id"], row)

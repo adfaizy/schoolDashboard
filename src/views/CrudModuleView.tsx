@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, Check, Plus, Trash2, Users } from 'lucide-react'
 import { DataModal, type FormValues } from '../components/DataModal'
+import { studentClassLabel } from '../lib/school'
 import { RowActions, type ViewProps } from './shared'
 import type { ModuleDefinition } from '../lib/modules'
 
@@ -79,6 +80,15 @@ export function CrudModuleView({ module, controller, onNotify, onBack }: ViewPro
     }
   }
 
+  function requestDelete(row: Record<string, any>) {
+    const blocked = module.guardDelete?.(row, data)
+    if (blocked) {
+      onNotify(blocked, 'error')
+      return
+    }
+    setDeleting(row)
+  }
+
   async function assignStudent() {
     if (!assignTo || !studentToAdd) return
     setBusy(true)
@@ -147,7 +157,7 @@ export function CrudModuleView({ module, controller, onNotify, onBack }: ViewPro
               )}
               <RowActions
                 onEdit={() => setEditing(row)}
-                onDelete={() => setDeleting(row)}
+                onDelete={() => requestDelete(row)}
               />
             </div>
           ))}
@@ -170,7 +180,10 @@ export function CrudModuleView({ module, controller, onNotify, onBack }: ViewPro
                 const s = data.students.find((x) => x.id === a.student_id)
                 return (
                   <div key={a.id} className="flex items-center gap-2 text-xs text-slate-200 bg-slate-950/50 rounded-xl px-3 py-2">
-                    <span className="flex-1">{s?.name ?? 'Unknown student'}</span>
+                    <span className="flex-1">
+                      {s?.name ?? 'Unknown student'}
+                      {s && <span className="text-[10px] text-slate-500"> · {studentClassLabel(data, s)}</span>}
+                    </span>
                     <button onClick={() => removeAssignment(a.id)} className="text-slate-500 hover:text-rose-400" aria-label="Remove">
                       <Trash2 size={12} />
                     </button>
@@ -185,7 +198,9 @@ export function CrudModuleView({ module, controller, onNotify, onBack }: ViewPro
                 className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200"
               >
                 <option value="">Select student…</option>
-                {unassignedStudents.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {unassignedStudents.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} · {studentClassLabel(data, s)}</option>
+                ))}
               </select>
               <button
                 onClick={assignStudent}

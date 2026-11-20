@@ -31,6 +31,15 @@ const MODULE_TABLE_TO_KEY: Record<ModuleTable, ModuleListKey> = {
   hostel_assignments: 'hostelAssignments',
 }
 
+/** Natural keys so repeated saves update instead of failing on unique indexes. */
+const ON_CONFLICT: Partial<Record<TableName | ModuleTable, string>> = {
+  schedule_items: 'class_id,period_no',
+  exam_marks: 'session,term,student_id,subject',
+  fees: 'student_id,month_year',
+  transport_passengers: 'route_id,student_id',
+  hostel_assignments: 'room_id,student_id',
+}
+
 const SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
 
 function errorMessage(error: unknown): string {
@@ -59,6 +68,15 @@ function errorMessage(error: unknown): string {
   }
   if (!raw) return 'Could not reach Supabase. Data was saved on this device instead.'
   return `${raw} (saved on device instead)`
+}
+
+function upsertRow(list: Array<Record<string, any>>, row: Record<string, unknown>) {
+  const id = String(row.id ?? `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  const record = { ...row, id, created_at: row.created_at ?? new Date().toISOString() }
+  const exists = list.some((item) => item.id === id)
+  return exists
+    ? list.map((item) => (item.id === id ? { ...item, ...record } : item))
+    : [...list, record]
 }
 
 export function useDashboardData() {
@@ -163,7 +181,9 @@ export function useDashboardData() {
       const payload = { ...row }
       if (!payload.id) delete payload.id
       delete payload.created_at
-      const { error: e } = await supabase!.from(table).upsert(payload)
+      const { error: e } = await supabase!.from(table).upsert(payload, {
+        onConflict: ON_CONFLICT[table],
+      })
       if (e) throw e
     })
     if (didRemote) return
@@ -171,29 +191,72 @@ export function useDashboardData() {
     const key = TABLE_TO_KEY[table]
     const current = dataRef.current
     const list = current[key] as unknown as Array<Record<string, unknown>>
-    const id = String(row.id ?? `local-${Date.now()}`)
-    const record = { ...row, id, created_at: new Date().toISOString() }
-    const exists = list.some((item) => item.id === id)
-    const nextList = exists
-      ? list.map((item) => (item.id === id ? { ...item, ...record } : item))
-      : [...list, record]
-    commitLocal({ ...current, [key]: nextList } as unknown as DashboardData)
+    commitLocal({ ...current, [key]: upsertRow(list, row) } as unknown as DashboardData)
+  }
+
+  /** Delete a row plus every local child row that would otherwise dangle. */
+  function removeLocally(current: DashboardData, table: TableName, id: string): DashboardData {
+    if (table === 'students') {
+      return {
+        ...current,
+        students: current.students.filter((row) => row.id !== id),
+        attendance: current.attendance.filter((row) => !(row.entity_type === 'students' && row.record_id === id)),
+        examMarks: current.examMarks.filter((row) => row.student_id !== id),
+        fees: current.fees.filter((row) => row.student_id !== id),
+        books: current.books.map((row) => (row.issued_to === id ? { ...row, issued_to: null, status: 'available', issue_date: null } : row)),
+        transportPassengers: current.transportPassengers.filter((row) => row.student_id !== id),
+        hostelAssignments: current.hostelAssignments.filter((row) => row.student_id !== id),
+      }
+    }
+    const key = TABLE_TO_KEY[table]
+    const list = current[key] as unknown as Array<Record<string, unknown>>
+    return { ...current, [key]: list.filter((row) => row.id !== id) } as unknown as DashboardData
   }
 
   async function deleteRecord(table: TableName, id: string): Promise<void> {
     const didRemote = await tryRemote(async () => {
+      if (table === 'students') {
+        // attendance has no foreign key, so remove its rows explicitly.
+        const { error: attendanceError } = await supabase!
+          .from('attendance')
+          .delete()
+          .eq('record_id', id)
+          .eq('entity_type', 'students')
+        if (attendanceError) throw attendanceError
+      }
       const { error: e } = await supabase!.from(table).delete().eq('id', id)
       if (e) throw e
     })
     if (didRemote) return
+    commitLocal(removeLocally(dataRef.current, table, id))
+  }
 
-    const key = TABLE_TO_KEY[table]
-    const current = dataRef.current
+  function removeModuleLocally(current: DashboardData, table: ModuleTable, id: string): DashboardData {
+    if (table === 'transport_routes') {
+      return {
+        ...current,
+        routes: current.routes.filter((row) => row.id !== id),
+        transportPassengers: current.transportPassengers.filter((row) => row.route_id !== id),
+      }
+    }
+    if (table === 'hostel_rooms') {
+      return {
+        ...current,
+        hostelRooms: current.hostelRooms.filter((row) => row.id !== id),
+        hostelAssignments: current.hostelAssignments.filter((row) => row.room_id !== id),
+      }
+    }
+    if (table === 'classes') {
+      return {
+        ...current,
+        classes: current.classes.filter((row) => row.id !== id),
+        schedule: current.schedule.filter((row) => row.class_id !== id),
+        students: current.students.map((row) => (row.class_id === id ? { ...row, class_id: null } : row)),
+      }
+    }
+    const key = MODULE_TABLE_TO_KEY[table]
     const list = current[key] as unknown as Array<Record<string, unknown>>
-    commitLocal({
-      ...current,
-      [key]: list.filter((item) => item.id !== id),
-    } as unknown as DashboardData)
+    return { ...current, [key]: list.filter((row) => row.id !== id) } as unknown as DashboardData
   }
 
   async function saveModule(table: ModuleTable, row: Record<string, unknown>): Promise<void> {
@@ -201,7 +264,9 @@ export function useDashboardData() {
       const payload = { ...row }
       if (!payload.id) delete payload.id
       delete payload.created_at
-      const { error: e } = await supabase!.from(table).upsert(payload)
+      const { error: e } = await supabase!.from(table).upsert(payload, {
+        onConflict: ON_CONFLICT[table],
+      })
       if (e) throw e
     })
     if (didRemote) return
@@ -209,13 +274,7 @@ export function useDashboardData() {
     const key = MODULE_TABLE_TO_KEY[table]
     const current = dataRef.current
     const list = current[key] as unknown as Array<Record<string, unknown>>
-    const id = String(row.id ?? `local-${Date.now()}`)
-    const record = { ...row, id, created_at: new Date().toISOString() }
-    const exists = list.some((item) => item.id === id)
-    const nextList = exists
-      ? list.map((item) => (item.id === id ? { ...item, ...record } : item))
-      : [...list, record]
-    commitLocal({ ...current, [key]: nextList } as unknown as DashboardData)
+    commitLocal({ ...current, [key]: upsertRow(list, row) } as unknown as DashboardData)
   }
 
   async function deleteModule(table: ModuleTable, id: string): Promise<void> {
@@ -224,14 +283,42 @@ export function useDashboardData() {
       if (e) throw e
     })
     if (didRemote) return
+    commitLocal(removeModuleLocally(dataRef.current, table, id))
+  }
 
-    const key = MODULE_TABLE_TO_KEY[table]
-    const current = dataRef.current
-    const list = current[key] as unknown as Array<Record<string, unknown>>
-    commitLocal({
-      ...current,
-      [key]: list.filter((item) => item.id !== id),
-    } as unknown as DashboardData)
+  /**
+   * Batch upserts + deletes for screens that edit several related rows at once
+   * (e.g. a full result card) so the app refreshes once instead of per subject.
+   */
+  async function applyModuleChanges(
+    upserts: Array<{ table: ModuleTable; row: Record<string, unknown> }>,
+    deletes: Array<{ table: ModuleTable; id: string }> = [],
+  ): Promise<void> {
+    const didRemote = await tryRemote(async () => {
+      for (const change of deletes) {
+        const { error: e } = await supabase!.from(change.table).delete().eq('id', change.id)
+        if (e) throw e
+      }
+      for (const change of upserts) {
+        const payload = { ...change.row }
+        if (!payload.id) delete payload.id
+        delete payload.created_at
+        const { error: e } = await supabase!.from(change.table).upsert(payload, {
+          onConflict: ON_CONFLICT[change.table],
+        })
+        if (e) throw e
+      }
+    })
+    if (didRemote) return
+
+    let current = dataRef.current
+    for (const change of deletes) current = removeModuleLocally(current, change.table, change.id)
+    for (const change of upserts) {
+      const key = MODULE_TABLE_TO_KEY[change.table]
+      const list = current[key] as unknown as Array<Record<string, unknown>>
+      current = { ...current, [key]: upsertRow(list, change.row) } as unknown as DashboardData
+    }
+    commitLocal(current)
   }
 
   async function setAttendance(date_str: string, entity_type: string, record_id: string, status: string): Promise<void> {
@@ -269,7 +356,7 @@ export function useDashboardData() {
     })
   }
 
-  async function saveSettings(row: { total_teachers: number; pending_fees: string }): Promise<void> {
+  async function saveSettings(row: { school_name: string | null }): Promise<void> {
     const didRemote = await tryRemote(async () => {
       const { error: e } = await supabase!.from('settings').upsert({
         id: SINGLETON_ID, ...row, updated_at: new Date().toISOString(),
@@ -279,7 +366,13 @@ export function useDashboardData() {
     if (didRemote) return
     commitLocal({
       ...dataRef.current,
-      settings: { id: 'local-settings', ...row, updated_at: new Date().toISOString() },
+      settings: {
+        id: 'local-settings',
+        total_teachers: dataRef.current.settings?.total_teachers ?? null,
+        pending_fees: dataRef.current.settings?.pending_fees ?? null,
+        ...row,
+        updated_at: new Date().toISOString(),
+      },
     })
   }
 
@@ -295,7 +388,7 @@ export function useDashboardData() {
     isRemote: isConfigured && remoteOk,
     usingLocal: !isConfigured || !remoteOk,
     loading, error, data, refresh, retryConnection,
-    saveRecord, deleteRecord, saveModule, deleteModule, setAttendance,
+    saveRecord, deleteRecord, saveModule, deleteModule, applyModuleChanges, setAttendance,
     saveProfile, saveSettings,
   }
 }

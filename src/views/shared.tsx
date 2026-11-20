@@ -9,6 +9,8 @@ export type ViewProps = {
   onDelete: (target: DeleteTarget) => void
   onNotify: (message: string, kind: 'success' | 'error') => void
   update: UpdateController
+  /** Jump into a Manage module, used by quick actions and empty states. */
+  onOpenModule: (moduleId: string) => void
 }
 
 export function RowActions({ onEdit, onDelete }: {

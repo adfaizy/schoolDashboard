@@ -1,11 +1,11 @@
 import type { Field, FormValues } from '../components/DataModal'
 import type { TableName } from '../hooks/useDashboardData'
-import type { ChatMessage, EventItem, Profile, ScheduleItem, SettingsRow, Student } from './types'
+import { classLabel, sortedClasses, todayKey } from './school'
+import type { ChatMessage, DashboardData, EventItem, Student } from './types'
 import { COLOR_OPTIONS, ICON_OPTIONS } from './styles'
 
 export type ModalState =
   | { kind: 'student'; row?: Student }
-  | { kind: 'schedule'; row?: ScheduleItem }
   | { kind: 'message'; row?: ChatMessage }
   | { kind: 'reply'; row: ChatMessage }
   | { kind: 'event'; row?: EventItem }
@@ -15,8 +15,6 @@ export type ModalState =
 
 export type DeleteTarget = { table: TableName; id: string; label: string }
 
-const statusOptions = ['Excellent', 'Perfect', 'Good', 'Warning', 'Critical']
-const dayOptions = ['Today', 'Tomorrow', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const eventTypeOptions = ['Exam', 'Notice', 'Alert', 'Event', 'Meeting']
 
 function options(list: string[]) {
@@ -25,49 +23,45 @@ function options(list: string[]) {
 
 export function modalConfig(
   modal: Exclude<ModalState, null>,
-  profile: Profile | null,
-  settings: SettingsRow | null,
+  data: DashboardData,
 ): { title: string; fields: Field[]; initial: FormValues } {
   switch (modal.kind) {
-    case 'student':
+    case 'student': {
+      const classOptions = sortedClasses(data.classes).map((row) => ({
+        value: row.id,
+        label: classLabel(row),
+      }))
       return {
         title: modal.row ? 'Edit Student' : 'Add Student',
         fields: [
-          { key: 'name', label: 'Name', required: true, placeholder: 'e.g. Alex Carter' },
-          { key: 'grade', label: 'Grade / Class', required: true, placeholder: 'e.g. Grade 10-A' },
-          { key: 'attendance', label: 'Attendance (%)', type: 'number', required: true },
-          { key: 'status', label: 'Status', type: 'select', options: options(statusOptions) },
-          { key: 'avatar_url', label: 'Avatar URL (optional)', hint: 'Paste an image URL, or leave blank for the default avatar.' },
+          { key: 'name', label: 'Full name', required: true, placeholder: 'e.g. Ali Hassan' },
+          {
+            key: 'class_id',
+            label: 'Class',
+            type: 'select',
+            required: true,
+            options: classOptions.length
+              ? classOptions
+              : [{ value: '', label: 'Add a class in Classes & Subjects first' }],
+            hint: 'Class subjects and exam subjects follow this selection.',
+          },
+          { key: 'roll_no', label: 'Roll number', placeholder: 'e.g. 12' },
+          { key: 'father_name', label: "Father's name" },
+          { key: 'parent_contact', label: 'Parent contact', placeholder: 'e.g. 0300 1234567' },
+          { key: 'admission_date', label: 'Admission date', placeholder: 'YYYY-MM-DD' },
         ],
         initial: {
           name: modal.row?.name ?? '',
-          grade: modal.row?.grade ?? '',
-          attendance: modal.row?.attendance ?? 0,
-          status: modal.row?.status ?? 'Good',
-          avatar_url: modal.row?.avatar_url ?? '',
+          class_id: modal.row?.class_id ?? classOptions[0]?.value ?? '',
+          roll_no: modal.row?.roll_no ?? '',
+          father_name: modal.row?.father_name ?? '',
+          parent_contact: modal.row?.parent_contact ?? '',
+          admission_date: modal.row?.admission_date
+            ? String(modal.row.admission_date).slice(0, 10)
+            : todayKey(),
         },
       }
-
-    case 'schedule':
-      return {
-        title: modal.row ? 'Edit Class' : 'Add Class',
-        fields: [
-          { key: 'day', label: 'Day', type: 'select', options: options(dayOptions) },
-          { key: 'time', label: 'Time', required: true, placeholder: '09:00 AM' },
-          { key: 'subject', label: 'Subject', required: true },
-          { key: 'teacher', label: 'Teacher' },
-          { key: 'room', label: 'Room' },
-          { key: 'color', label: 'Accent color', type: 'select', options: COLOR_OPTIONS },
-        ],
-        initial: {
-          day: modal.row?.day ?? 'Today',
-          time: modal.row?.time ?? '',
-          subject: modal.row?.subject ?? '',
-          teacher: modal.row?.teacher ?? '',
-          room: modal.row?.room ?? '',
-          color: modal.row?.color ?? 'cyan',
-        },
-      }
+    }
 
     case 'message':
       return {
@@ -127,22 +121,25 @@ export function modalConfig(
           { key: 'avatar_url', label: 'Avatar URL (optional)' },
         ],
         initial: {
-          full_name: profile?.full_name ?? '',
-          role_title: profile?.role_title ?? '',
-          avatar_url: profile?.avatar_url ?? '',
+          full_name: data.profile?.full_name ?? '',
+          role_title: data.profile?.role_title ?? '',
+          avatar_url: data.profile?.avatar_url ?? '',
         },
       }
 
     case 'settings':
       return {
-        title: 'Edit Overview Numbers',
+        title: 'School Details',
         fields: [
-          { key: 'total_teachers', label: 'Total teachers', type: 'number' },
-          { key: 'pending_fees', label: 'Pending fees', placeholder: 'e.g. $12.5k' },
+          {
+            key: 'school_name',
+            label: 'School name',
+            placeholder: 'e.g. Punjab College Raiwind',
+            hint: 'Shown on the home screen and reports.',
+          },
         ],
         initial: {
-          total_teachers: settings?.total_teachers ?? 0,
-          pending_fees: settings?.pending_fees ?? '',
+          school_name: data.settings?.school_name ?? '',
         },
       }
   }

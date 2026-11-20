@@ -1,33 +1,63 @@
-import { BarChart3, ClipboardCheck, Smartphone } from 'lucide-react'
+import {
+  BarChart3, ClipboardCheck, GraduationCap, School, Smartphone,
+} from 'lucide-react'
 import { MODULES } from '../lib/modules'
+import { classSubjects, todayKey } from '../lib/school'
 import type { ViewProps } from './shared'
 
 export function ManageView({ controller, onOpen }: ViewProps & {
   onOpen: (moduleId: string) => void
 }) {
   const { data } = controller
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayKey()
   const markedToday = data.attendance.filter((a) => a.date_str === today).length
+  const unassigned = data.students.filter((student) => !student.class_id).length
+  const emptyClasses = data.classes.filter((klass) => classSubjects(data, klass.id).length === 0).length
+  const slots = data.classes.length * 8
+  const filled = data.schedule.filter((item) => item.class_id && item.period_no).length
+
+  const moduleCards = MODULES.map((module) => {
+    const count = (() => {
+      switch (module.id) {
+        case 'staff': return data.staff.length
+        case 'fees': return data.fees.length
+        case 'library': return data.books.length
+        case 'transport': return data.transportPassengers.length
+        case 'hostel': return data.hostelAssignments.length
+        default: return 0
+      }
+    })()
+    return {
+      id: module.id, label: module.label, tagline: module.tagline,
+      icon: module.icon, accent: module.accent, count,
+    }
+  })
 
   const cards = [
-    ...MODULES.map((m) => {
-      const count = (() => {
-        switch (m.id) {
-          case 'classes': return data.classes.length
-          case 'staff': return data.staff.length
-          case 'exams': return data.examMarks.length
-          case 'fees': return data.fees.length
-          case 'library': return data.books.length
-          case 'transport': return data.transportPassengers.length
-          case 'hostel': return data.hostelAssignments.length
-          default: return 0
-        }
-      })()
-      return { id: m.id, label: m.label, tagline: m.tagline, icon: m.icon, accent: m.accent, count }
-    }),
-    { id: 'attendance', label: 'Attendance', tagline: 'Mark present / absent / late', icon: ClipboardCheck, accent: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', count: markedToday },
-    { id: 'reports', label: 'Reports', tagline: 'Fees, books, attendance summary', icon: BarChart3, accent: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30', count: null as number | null },
+    {
+      id: 'classes', label: 'Classes & Subjects', tagline: 'Roster plus each class subject list',
+      icon: School, accent: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30', count: data.classes.length,
+    },
+    ...moduleCards,
+    {
+      id: 'exams', label: 'Exams & Results', tagline: 'Marks, percentages and result cards',
+      icon: GraduationCap, accent: 'text-amber-400 bg-amber-500/10 border-amber-500/30', count: data.examMarks.length,
+    },
+    {
+      id: 'attendance', label: 'Attendance', tagline: 'Mark present / absent / late',
+      icon: ClipboardCheck, accent: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', count: markedToday,
+    },
+    {
+      id: 'reports', label: 'Reports', tagline: 'Fees, attendance and class coverage',
+      icon: BarChart3, accent: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30', count: null as number | null,
+    },
   ]
+
+  const issues = [
+    unassigned ? `${unassigned} student${unassigned === 1 ? '' : 's'} without a class` : '',
+    emptyClasses ? `${emptyClasses} class${emptyClasses === 1 ? '' : 'es'} without subjects` : '',
+    slots && filled < slots ? `${slots - filled} timetable periods still empty` : '',
+  ].filter(Boolean)
 
   return (
     <div className="fade-in-up">
@@ -42,6 +72,15 @@ export function ManageView({ controller, onOpen }: ViewProps & {
           </div>
         </div>
       </header>
+
+      {issues.length > 0 && (
+        <div className="mx-6 mb-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1">Needs attention</p>
+          {issues.map((issue) => (
+            <p key={issue} className="text-[11px] text-amber-200/80 leading-relaxed">• {issue}</p>
+          ))}
+        </div>
+      )}
 
       <div className="px-6 grid grid-cols-2 gap-3.5 pb-8">
         {cards.map((card) => (

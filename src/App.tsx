@@ -48,7 +48,7 @@ function Dashboard({
     if (controller.error) showToast(controller.error, 'error')
   }, [controller.error, showToast])
 
-  const config = modal ? modalConfig(modal, controller.data.profile, controller.data.settings) : null
+  const config = modal ? modalConfig(modal, controller.data) : null
 
   function asImageUrl(value: FormValues[string] | undefined): string | null {
     if (value === null || value === undefined || value === '') return null
@@ -60,27 +60,23 @@ function Dashboard({
     setSaving(true)
     try {
       switch (modal.kind) {
-        case 'student':
+        case 'student': {
+          const klass = controller.data.classes.find((row) => row.id === String(values.class_id ?? ''))
           await controller.saveRecord('students', {
             ...(modal.row ? { id: modal.row.id } : {}),
-            name: String(values.name ?? ''),
-            grade: String(values.grade ?? ''),
-            attendance: Number(values.attendance ?? 0),
-            status: String(values.status ?? 'Good'),
-            avatar_url: asImageUrl(values.avatar_url),
+            name: String(values.name ?? '').trim(),
+            class_id: values.class_id ? String(values.class_id) : null,
+            grade: klass ? `${klass.grade}${klass.section ? ` ${klass.section}` : ''}` : (modal.row?.grade ?? ''),
+            roll_no: values.roll_no ? String(values.roll_no) : null,
+            father_name: values.father_name ? String(values.father_name) : null,
+            parent_contact: values.parent_contact ? String(values.parent_contact) : null,
+            admission_date: values.admission_date ? String(values.admission_date).slice(0, 10) : null,
+            attendance: modal.row?.attendance ?? 0,
+            status: modal.row?.status ?? 'No records',
+            avatar_url: modal.row?.avatar_url ?? null,
           })
           break
-        case 'schedule':
-          await controller.saveRecord('schedule_items', {
-            ...(modal.row ? { id: modal.row.id } : {}),
-            day: String(values.day ?? 'Today'),
-            time: String(values.time ?? ''),
-            subject: String(values.subject ?? ''),
-            teacher: String(values.teacher ?? ''),
-            room: String(values.room ?? ''),
-            color: String(values.color ?? 'cyan'),
-          })
-          break
+        }
         case 'message':
           await controller.saveRecord('messages', {
             ...(modal.row ? { id: modal.row.id } : {}),
@@ -122,8 +118,7 @@ function Dashboard({
           break
         case 'settings':
           await controller.saveSettings({
-            total_teachers: Number(values.total_teachers ?? 0),
-            pending_fees: String(values.pending_fees ?? ''),
+            school_name: values.school_name ? String(values.school_name).trim() : null,
           })
           break
       }
@@ -157,22 +152,29 @@ function Dashboard({
     setModuleId(null)
   }
 
+  function openModule(id: string) {
+    setModuleId(id)
+    setActiveTab('manage')
+  }
+
+  const viewProps = { ...shared, onOpenModule: openModule }
+
   return (
     <>
       {controller.loading && <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-400/80 animate-pulse z-[90]" />}
       <Toast toast={toast} onDismiss={dismissToast} />
 
       <div className="flex-1 overflow-y-auto pb-24 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-        {activeTab === 'home' && <HomeView {...shared} onTabChange={selectTab} />}
-        {activeTab === 'students' && <StudentsView {...shared} />}
-        {activeTab === 'academics' && <TimetableView {...shared} />}
-        {activeTab === 'messages' && <MessagesView {...shared} />}
+        {activeTab === 'home' && <HomeView {...viewProps} onTabChange={selectTab} />}
+        {activeTab === 'students' && <StudentsView {...viewProps} />}
+        {activeTab === 'academics' && <TimetableView {...viewProps} />}
+        {activeTab === 'messages' && <MessagesView {...viewProps} />}
         {activeTab === 'manage' && (
           moduleId
-            ? <ModuleScreen moduleId={moduleId} shared={shared} onBack={() => setModuleId(null)} />
-            : <ManageView {...shared} onOpen={setModuleId} />
+            ? <ModuleScreen moduleId={moduleId} shared={viewProps} onBack={() => setModuleId(null)} />
+            : <ManageView {...viewProps} onOpen={setModuleId} />
         )}
-        {activeTab === 'profile' && <ProfileView {...shared} onConnect={onConnect} />}
+        {activeTab === 'profile' && <ProfileView {...viewProps} onConnect={onConnect} />}
       </div>
 
       <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/80 pb-6 pt-3 px-6 z-50">

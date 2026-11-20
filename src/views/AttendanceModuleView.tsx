@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import { classLabel, sortedClasses, studentClassLabel, summarizeAttendance } from '../lib/school'
 import type { ViewProps } from './shared'
 
 const STATUSES = ['present', 'absent', 'late', 'leave'] as const
@@ -20,9 +21,11 @@ export function AttendanceModuleView({ controller, onNotify, onBack }: ViewProps
   const [classId, setClassId] = useState('')
 
   const students = data.students
-  const staff = data.staff
+  const staff = data.staff.filter((row) => row.status !== 'inactive')
   const rows = entity === 'students'
-    ? (classId ? students.filter((s) => s.class_id === classId) : students)
+    ? (classId === '__none__'
+        ? students.filter((s) => !s.class_id)
+        : classId ? students.filter((s) => s.class_id === classId) : students)
     : staff
 
   const attendanceMap = useMemo(() => {
@@ -33,12 +36,16 @@ export function AttendanceModuleView({ controller, onNotify, onBack }: ViewProps
     return map
   }, [data.attendance, date, entity])
 
-  const summary = {
-    present: Object.values(attendanceMap).filter((v) => v === 'present').length,
-    absent: Object.values(attendanceMap).filter((v) => v === 'absent').length,
-    late: Object.values(attendanceMap).filter((v) => v === 'late').length,
-    leave: Object.values(attendanceMap).filter((v) => v === 'leave').length,
-  }
+  const summary = summarizeAttendance(
+    rows
+      .filter((row) => attendanceMap[row.id])
+      .map((row) => ({
+        date_str: date,
+        entity_type: entity,
+        record_id: row.id,
+        status: attendanceMap[row.id],
+      })),
+  )
 
   async function mark(recordId: string, status: string) {
     await controller.setAttendance(date, entity, recordId, status)
@@ -91,9 +98,10 @@ export function AttendanceModuleView({ controller, onNotify, onBack }: ViewProps
               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200"
             >
               <option value="">All classes</option>
-              {data.classes.map((c) => (
-                <option key={c.id} value={c.id}>{c.grade}{c.section ? ` ${c.section}` : ''}</option>
+              {sortedClasses(data.classes).map((c) => (
+                <option key={c.id} value={c.id}>{classLabel(c)}</option>
               ))}
+              <option value="__none__">Unassigned students</option>
             </select>
           )}
         </div>
@@ -113,7 +121,10 @@ export function AttendanceModuleView({ controller, onNotify, onBack }: ViewProps
         </div>
 
         <div className="flex items-center justify-between">
-          <p className="text-[11px] text-slate-500">{marked}/{rows.length} marked · {date}</p>
+          <p className="text-[11px] text-slate-500">
+            {marked}/{rows.length} marked · {date}
+            {summary.rate === null ? '' : ` · ${summary.rate}% present`}
+          </p>
           <div className="flex gap-2">
             <button onClick={() => markAll('present')} className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30 rounded-lg px-2.5 py-1.5">All present</button>
             <button onClick={() => markAll('absent')} className="text-[10px] font-bold uppercase tracking-wider text-rose-400 border border-rose-500/30 rounded-lg px-2.5 py-1.5">All absent</button>
@@ -122,13 +133,17 @@ export function AttendanceModuleView({ controller, onNotify, onBack }: ViewProps
 
         {rows.length === 0 ? (
           <p className="text-xs text-slate-500 py-10 text-center">
-            {entity === 'students' ? 'No students yet. Add students first.' : 'No staff yet. Add staff first.'}
+            {entity === 'students'
+              ? (classId ? 'No students in this class yet.' : 'No students yet. Add students first.')
+              : 'No active staff yet. Add staff first.'}
           </p>
         ) : (
           <div className="flex flex-col gap-2 pb-6">
             {rows.map((row: any) => {
               const current = attendanceMap[row.id] ?? 'unmarked'
-              const secondary = entity === 'students' ? (row.roll_no ? `Roll ${row.roll_no}` : '') : (row.designation || '')
+              const secondary = entity === 'students'
+                ? [studentClassLabel(data, row), row.roll_no ? `Roll ${row.roll_no}` : ''].filter(Boolean).join(' · ')
+                : `${row.designation || 'Staff'}${row.staff_category === 'teaching' ? ' · Teaching' : ' · Non-teaching'}`
               return (
                 <div key={row.id} className="bg-slate-900/60 border border-slate-800 rounded-2xl px-3 py-2.5 flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center text-[10px] font-bold text-cyan-400 shrink-0">

@@ -1,34 +1,55 @@
 import {
-  AlertCircle, Bell, CalendarDays, CheckCircle2, Clock,
+  AlertCircle, Bell, CalendarDays, CheckCircle2, ChevronRight, Clock,
   CreditCard, FileText, GraduationCap, Plus, Settings, Users,
 } from 'lucide-react'
+import {
+  money, pendingFees, summarizeAttendance, teachingStaff, todayKey,
+} from '../lib/school'
 import { COLORS, DEFAULT_AVATAR, Icon, colorFor } from '../lib/styles'
 import type { EventItem } from '../lib/types'
 import { AddButton, EmptyState, RowActions, avatarSrc, type ViewProps } from './shared'
 
 export function HomeView({
-  controller, onEdit, onDelete, onNotify, onTabChange,
+  controller, onEdit, onDelete, onNotify, onTabChange, onOpenModule,
 }: ViewProps & { onTabChange: (tab: string) => void }) {
   const { data } = controller
-  const name = data.profile?.full_name ?? data.settings?.school_name ?? 'School Principal'
-  const attendance = data.students.length
-    ? Math.round(data.students.reduce((sum, s) => sum + s.attendance, 0) / data.students.length)
-    : 0
+  const name = data.profile?.full_name ?? 'School Principal'
+  const schoolName = data.settings?.school_name?.trim() || 'Welcome back'
+  const teachers = teachingStaff(data)
+  const today = summarizeAttendance(
+    data.attendance.filter((row) => row.date_str === todayKey() && row.entity_type === 'students'),
+  )
+  const pending = pendingFees(data)
 
   const stats = [
-    { title: 'Total Students', value: String(data.students.length), icon: <Users size={22} />, color: COLORS.cyan },
-    { title: 'Total Teachers', value: data.settings?.total_teachers != null ? String(data.settings.total_teachers) : '—', icon: <GraduationCap size={22} />, color: COLORS.purple },
-    { title: "Today's Attendance", value: data.students.length ? `${attendance}%` : '—', icon: <CheckCircle2 size={22} />, color: COLORS.emerald },
-    { title: 'Pending Fees', value: data.settings?.pending_fees ?? '—', icon: <CreditCard size={22} />, color: COLORS.rose },
+    { title: 'Total Students', value: String(data.students.length), detail: `${data.classes.length} classes`, icon: <Users size={22} />, color: COLORS.cyan },
+    { title: 'Teaching Staff', value: String(teachers.length), detail: `${data.staff.length} total staff`, icon: <GraduationCap size={22} />, color: COLORS.purple },
+    { title: "Today's Attendance", value: today.rate === null ? '—' : `${today.rate}%`, detail: today.marked ? `${today.marked} marked` : 'Not marked yet', icon: <CheckCircle2 size={22} />, color: COLORS.emerald },
+    { title: 'Fees Pending', value: pending > 0 ? money(pending) : '—', detail: `${data.fees.filter((fee) => fee.status !== 'paid').length} unpaid`, icon: <CreditCard size={22} />, color: COLORS.rose },
   ]
 
+  function addStudent() {
+    if (data.classes.length === 0) {
+      onOpenModule('classes')
+      return
+    }
+    onEdit({ kind: 'student' })
+  }
+
   const quickActions = [
-    { name: 'Add User', icon: <Plus size={24} />, color: COLORS.cyan, action: () => onEdit({ kind: 'student' }) },
-    { name: 'Attendance', icon: <CheckCircle2 size={24} />, color: COLORS.emerald, action: () => onNotify(`Average attendance: ${attendance}%`, 'success') },
+    { name: 'Add Student', icon: <Plus size={24} />, color: COLORS.cyan, action: addStudent },
+    { name: 'Attendance', icon: <CheckCircle2 size={24} />, color: COLORS.emerald, action: () => onOpenModule('attendance') },
     { name: 'Timetable', icon: <CalendarDays size={24} />, color: COLORS.purple, action: () => onTabChange('academics') },
-    { name: 'Exams', icon: <FileText size={24} />, color: COLORS.amber, action: () => onEdit({ kind: 'event' }) },
+    { name: 'Results', icon: <FileText size={24} />, color: COLORS.amber, action: () => onOpenModule('exams') },
     { name: 'Notices', icon: <AlertCircle size={24} />, color: COLORS.rose, action: () => onEdit({ kind: 'event' }) },
   ]
+
+  const setup = [
+    { done: data.classes.length > 0, label: 'Add classes and their subjects', action: () => onOpenModule('classes') },
+    { done: teachers.length > 0, label: 'Add active teaching staff', action: () => onOpenModule('staff') },
+    { done: data.students.length > 0, label: 'Enroll students into classes', action: addStudent },
+    { done: data.schedule.some((item) => item.subject), label: 'Fill the period timetable', action: () => onTabChange('academics') },
+  ].filter((step) => !step.done)
 
   return (
     <div className="fade-in-up">
@@ -43,15 +64,15 @@ export function HomeView({
             <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-slate-950 rounded-full" />
           </div>
           <div>
-            <p className="text-xs font-medium text-slate-400 tracking-wide uppercase">Welcome back</p>
-            <h2 className="text-lg font-bold text-slate-100">{name}</h2>
+            <p className="text-[10px] font-medium text-slate-400 tracking-wide uppercase truncate max-w-[180px]">{schoolName}</p>
+            <h2 className="text-lg font-bold text-slate-100 truncate max-w-[180px]">{name}</h2>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => onEdit({ kind: 'settings' })}
             className="p-2.5 bg-slate-900 rounded-full border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition-colors"
-            aria-label="Edit overview numbers"
+            aria-label="School details"
           >
             <Settings size={19} />
           </button>
@@ -74,12 +95,30 @@ export function HomeView({
               <div className={`w-10 h-10 rounded-xl ${stat.color.bg} border ${stat.color.border} ${stat.color.text} flex items-center justify-center mb-4 relative z-10`}>
                 {stat.icon}
               </div>
-              <h3 className="text-2xl font-black text-white tracking-tight relative z-10">{stat.value}</h3>
+              <h3 className="text-xl font-black text-white tracking-tight relative z-10 truncate">{stat.value}</h3>
               <p className="text-xs text-slate-400 font-medium mt-1 relative z-10">{stat.title}</p>
+              <p className="text-[9px] text-slate-600 mt-0.5 relative z-10 uppercase tracking-wider">{stat.detail}</p>
             </div>
           ))}
         </div>
       </section>
+
+      {setup.length > 0 && (
+        <section className="px-6 mt-5">
+          <div className="bg-slate-900/60 border border-cyan-500/20 rounded-2xl p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">Finish setting up</p>
+            <div className="flex flex-col">
+              {setup.map((step) => (
+                <button key={step.label} onClick={step.action} className="flex items-center gap-2 py-2 text-left group">
+                  <span className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[8px] text-slate-600 group-hover:border-cyan-500/60">○</span>
+                  <span className="flex-1 text-[11px] text-slate-300">{step.label}</span>
+                  <ChevronRight size={13} className="text-slate-600 group-hover:text-cyan-400" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="mt-8">
         <div className="px-6 mb-4">
@@ -99,7 +138,7 @@ export function HomeView({
 
       <section className="px-6 mt-6 mb-8">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Upcoming & Activity</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Upcoming &amp; Activity</h2>
           <AddButton onClick={() => onEdit({ kind: 'event' })} label="Add" />
         </div>
 

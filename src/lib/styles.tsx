@@ -62,7 +62,8 @@ export function Icon({ name, size = 18, className = '' }: {
   return <Component size={size} className={className} />
 }
 
-export function attendanceColor(attendance: number): string {
+export function attendanceColor(attendance: number | null): string {
+  if (attendance === null) return 'text-slate-500'
   if (attendance >= 100) return 'text-emerald-400'
   if (attendance >= 90) return 'text-cyan-400'
   if (attendance >= 80) return 'text-amber-400'

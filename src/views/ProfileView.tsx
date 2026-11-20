@@ -10,6 +10,7 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect, update }:
   const profile = controller.data.profile
   const name = profile?.full_name ?? 'School Principal'
   const role = profile?.role_title ?? 'Not set yet'
+  const schoolName = controller.data.settings?.school_name?.trim()
 
   async function takePhoto() {
     try {
@@ -39,7 +40,7 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect, update }:
   const menu = [
     { icon: <User size={18} />, label: 'Personal Details', action: () => onEdit({ kind: 'profile' }) },
     { icon: <Bell size={18} />, label: 'Notifications', action: () => onEdit({ kind: 'event' }) },
-    { icon: <Settings size={18} />, label: 'App Settings', action: () => onEdit({ kind: 'settings' }) },
+    { icon: <Settings size={18} />, label: 'School Details', action: () => onEdit({ kind: 'settings' }) },
     {
       icon: <Phone size={18} />,
       label: 'Support & Help',
@@ -79,6 +80,7 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect, update }:
         <p className="text-[10px] font-medium text-cyan-400 uppercase tracking-wider mb-2">Tap camera to take photo</p>
         <h2 className="text-xl font-bold text-slate-100">{name}</h2>
         <p className="text-sm text-cyan-400 font-medium mt-1">{role}</p>
+        {schoolName && <p className="text-[11px] text-slate-400 mt-1">{schoolName}</p>}
         <p className="text-[11px] text-slate-500 mt-2">
           {controller.usingLocal ? 'Stored on this device' : 'Synced with Supabase'}
         </p>
