@@ -18,7 +18,7 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
     setMode('login')
     setEmail(ADMIN_EMAIL)
     setError(null)
-    setNotice('Admin email filled. Enter the admin password to continue.')
+    setNotice('Email filled. Enter your password to continue.')
     window.setTimeout(() => passwordRef.current?.focus(), 0)
   }
 
@@ -143,12 +143,6 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
             <UserPlus size={14} />
             {mode === 'login' ? 'Create school account (Sign up)' : 'I already have an account (Sign in)'}
           </button>
-
-          {mode === 'login' && (
-            <p className="text-[10px] text-slate-600 text-center leading-relaxed">
-              Administrator account: {ADMIN_EMAIL}
-            </p>
-          )}
 
           {onShowSetup && (
             <button

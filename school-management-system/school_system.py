@@ -1650,14 +1650,12 @@ class AuthDialog(tk.Toplevel):
                                 relief="flat", cursor="hand2")
         self.switch.pack(pady=(8, 0))
 
-        tk.Label(card, text="Administrator: adfaizy1976@gmail.com", bg=COLORS["card"],
-                 fg="#2563eb", font=("Segoe UI", 8)).pack(side="bottom", pady=(10, 0))
 
     def use_admin(self):
         self.mode = "login"
         self.name_row.pack_forget()
         self.heading.configure(text="Sign in to your school")
-        self.sub.configure(text="Admin email filled. Enter the admin password.")
+        self.sub.configure(text="Email filled. Enter your password.")
         self.submit.configure(text="Sign in", state="normal")
         self.switch.configure(text="New here? Create a school account")
         self.email_var.set("adfaizy1976@gmail.com")
