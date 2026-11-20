@@ -351,6 +351,7 @@ function Dashboard({
       setTransferTarget(target)
     },
     onNotify: showToast,
+    onSignOut,
     update,
   }
 

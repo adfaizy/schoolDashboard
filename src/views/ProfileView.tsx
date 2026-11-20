@@ -1,10 +1,10 @@
-import { Bell, Camera, ChevronRight, Database, Download, Phone, RefreshCw, RotateCcw, Settings, User } from 'lucide-react'
+import { Bell, Camera, ChevronRight, Database, Download, LogOut, Phone, RefreshCw, RotateCcw, Settings, User } from 'lucide-react'
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { DEFAULT_AVATAR } from '../lib/styles'
 import { isConfigured } from '../lib/supabase'
 import { avatarSrc, type ViewProps } from './shared'
 
-export function ProfileView({ controller, onEdit, onNotify, onConnect, update }: ViewProps & {
+export function ProfileView({ controller, onEdit, onNotify, onSignOut, onConnect, update }: ViewProps & {
   onConnect: () => void
 }) {
   const profile = controller.data.profile
@@ -96,7 +96,17 @@ export function ProfileView({ controller, onEdit, onNotify, onConnect, update }:
         ))}
       </div>
 
-      <div className="px-6 mt-6 pb-4">
+      <div className="px-6 mt-4">
+        <button
+          onClick={onSignOut}
+          className="w-full py-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center gap-2 text-sm font-bold text-rose-600 hover:bg-rose-500/20 active:scale-[0.98] transition-all"
+        >
+          <LogOut size={18} />
+          Logout / Switch account
+        </button>
+      </div>
+
+      <div className="px-6 mt-4 pb-4">
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">App updates</p>
           <div className="flex justify-between text-xs text-slate-400">

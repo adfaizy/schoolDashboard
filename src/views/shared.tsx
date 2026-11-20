@@ -18,6 +18,7 @@ export type ViewProps = {
   onDelete: (target: DeleteTarget) => void
   onTransfer: (target: TransferTarget) => void
   onNotify: (message: string, kind: 'success' | 'error') => void
+  onSignOut: () => void
   update: UpdateController
   /** Jump into a Manage module, used by quick actions and empty states. */
   onOpenModule: (moduleId: string) => void
