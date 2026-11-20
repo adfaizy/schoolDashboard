@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, LogIn, UserPlus, Database } from 'lucide-react'
+import { AlertCircle, UserPlus, Database } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
@@ -50,9 +50,11 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
     <div className="flex-1 flex flex-col justify-center px-7 bg-slate-950 relative overflow-hidden">
       <div className="absolute -top-24 -right-24 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl" />
       <div className="relative">
-        <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-6">
-          {mode === 'login' ? <LogIn size={28} /> : <UserPlus size={28} />}
-        </div>
+        <img
+          src="/school-login.gif"
+          alt="School Dashboard"
+          className="w-32 aspect-video object-cover rounded-2xl border border-cyan-500/30 bg-white shadow-lg mb-6"
+        />
         <h1 className="text-2xl font-bold text-slate-100 tracking-wide">
           {mode === 'login' ? 'Sign in' : 'Create account'}
         </h1>
