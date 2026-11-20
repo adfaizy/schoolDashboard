@@ -1,8 +1,6 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { AlertCircle, LogIn, UserPlus, Database } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-
-const ADMIN_EMAIL = 'adfaizy1976@gmail.com'
 
 export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
@@ -12,15 +10,6 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const passwordRef = useRef<HTMLInputElement>(null)
-
-  function fillAdmin() {
-    setMode('login')
-    setEmail(ADMIN_EMAIL)
-    setError(null)
-    setNotice('Email filled. Enter your password to continue.')
-    window.setTimeout(() => passwordRef.current?.focus(), 0)
-  }
 
   async function submit() {
     if (!supabase) return
@@ -99,7 +88,6 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Password</label>
             <input
-              ref={passwordRef}
               value={password}
               onChange={(e) => { setPassword(e.target.value); setError(null) }}
               type="password"
@@ -127,13 +115,6 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
             className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-xl py-3 disabled:opacity-60"
           >
             {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Sign up'}
-          </button>
-
-          <button
-            onClick={fillAdmin}
-            className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-xl py-3 disabled:opacity-60"
-          >
-            Admin Login
           </button>
 
           <button

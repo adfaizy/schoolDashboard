@@ -1641,26 +1641,11 @@ class AuthDialog(tk.Toplevel):
                                 relief="flat", cursor="hand2")
         self.submit.pack(fill="x", ipady=8)
 
-        tk.Button(card, text="Admin Login", command=self.use_admin,
-                  bg="#155eef", fg="#ffffff", font=("Segoe UI", 10, "bold"),
-                  relief="flat", cursor="hand2").pack(fill="x", ipady=7, pady=(8, 0))
-
         self.switch = tk.Button(card, text="New here? Create a school account", command=self.toggle,
                                 bg=COLORS["card"], fg=COLORS["accent"], font=("Segoe UI", 9),
                                 relief="flat", cursor="hand2")
         self.switch.pack(pady=(8, 0))
 
-
-    def use_admin(self):
-        self.mode = "login"
-        self.name_row.pack_forget()
-        self.heading.configure(text="Sign in to your school")
-        self.sub.configure(text="Email filled. Enter your password.")
-        self.submit.configure(text="Sign in", state="normal")
-        self.switch.configure(text="New here? Create a school account")
-        self.email_var.set("adfaizy1976@gmail.com")
-        self.error_var.set("")
-        self.pass_entry.focus_set()
 
     def toggle(self):
         self.error_var.set("")
