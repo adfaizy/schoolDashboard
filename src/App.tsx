@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, ShieldCheck, ArrowLeft } from 'lucide-react'
+import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, ShieldCheck, ArrowLeft, Download, RefreshCw } from 'lucide-react'
 import { DataModal, type FormValues } from './components/DataModal'
 import { SetupScreen } from './components/SetupScreen'
 import { AuthScreen } from './components/AuthScreen'
@@ -372,6 +372,18 @@ function Dashboard({
     <>
       {controller.loading && <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-400/80 animate-pulse z-[90]" />}
       <Toast toast={toast} onDismiss={dismissToast} />
+
+      {update.pending && (
+        <button
+          onClick={() => void update.restart()}
+          disabled={update.busy}
+          title={update.busy ? 'Applying update…' : `Update ready: ${update.pending}. Tap to restart and apply.`}
+          className={`absolute right-3 z-[65] flex items-center gap-1.5 rounded-full border border-cyan-600/40 bg-cyan-500 px-3 py-2 text-[11px] font-bold text-slate-950 shadow-lg active:scale-95 transition-all disabled:opacity-70 ${isAdmin && viewing ? 'top-12' : 'top-3'}`}
+        >
+          {update.busy ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+          <span>{update.busy ? 'Updating…' : 'Update ready'}</span>
+        </button>
+      )}
 
       {isAdmin && viewing && (
         <div className="absolute top-0 left-0 right-0 z-[60] flex items-center justify-between gap-2 bg-cyan-500/15 border-b border-cyan-500/30 px-4 py-2">
