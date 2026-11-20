@@ -32,14 +32,41 @@ except Exception:
 APP_NAME = "School Management System"
 APP_VERSION = "1.0.0"
 
-COLORS = {
-    "sidebar": "#0f172a",
-    "sidebar_hi": "#1e293b",
-    "accent": "#22d3ee",
-    "bg": "#f1f5f9",
-    "card": "#ffffff",
-    "text": "#0f172a",
-}
+def _system_dark_mode():
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        )
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        winreg.CloseKey(key)
+        return value == 0
+    except Exception:
+        return False
+
+
+_DARK = _system_dark_mode()
+if _DARK:
+    COLORS = {
+        "sidebar": "#0f172a",
+        "sidebar_hi": "#1e293b",
+        "accent": "#22d3ee",
+        "bg": "#0b1220",
+        "card": "#111827",
+        "text": "#e5e7eb",
+    }
+else:
+    COLORS = {
+        "sidebar": "#0f172a",
+        "sidebar_hi": "#1e293b",
+        "accent": "#0891b2",
+        "bg": "#f1f5f9",
+        "card": "#ffffff",
+        "text": "#0f172a",
+    }
 
 
 # ---------------------------------------------------------------- helpers
