@@ -53,7 +53,7 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
         <img
           src="/school-login.gif"
           alt="School Dashboard"
-          className="w-32 aspect-video object-cover rounded-2xl border border-cyan-500/30 bg-white shadow-lg mb-6"
+          className="w-32 aspect-video object-cover rounded-2xl border border-cyan-500/30 shadow-lg mb-6"
         />
         <h1 className="text-2xl font-bold text-slate-100 tracking-wide">
           {mode === 'login' ? 'Sign in' : 'Create account'}
