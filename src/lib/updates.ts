@@ -7,6 +7,7 @@ const BASE = (
 ).replace(/\/$/, '')
 
 const VERSION_KEY = 'schooldashboard.update.version'
+const PENDING_KEY = 'schooldashboard.update.pending'
 
 export type UpdateManifest = {
   version: string
@@ -18,28 +19,76 @@ export type UpdateState =
   | { status: 'unavailable' | 'current' | 'checking' | 'downloading' | 'idle'; version: string | null; message?: string }
   | { status: 'available' | 'downloaded' | 'error'; version: string | null; message?: string }
 
-let readyCalled = false
-
 export const updateSource = BASE
 
-export async function initLiveUpdate(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
+let readyPromise: Promise<void> | null = null
+
+function storageGet(key: string): string | null {
   try {
-    if (!readyCalled) {
-      await LiveUpdate.ready()
-      readyCalled = true
-    }
+    return localStorage.getItem(key)
   } catch {
-    // Non-fatal: the bundled app still works.
+    return null
+  }
+}
+
+function storageSet(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Storage unavailable — the live bundle still works.
   }
 }
 
 export function installedVersion(): string | null {
+  return storageGet(VERSION_KEY)
+}
+
+export function pendingVersion(): string | null {
+  return storageGet(PENDING_KEY)
+}
+
+async function currentBundleId(): Promise<string | null> {
+  if (!Capacitor.isNativePlatform()) return null
   try {
-    return localStorage.getItem(VERSION_KEY)
+    const { bundleId } = await LiveUpdate.getCurrentBundle()
+    return bundleId && bundleId !== 'public' ? bundleId : null
   } catch {
     return null
   }
+}
+
+async function confirmBundle(): Promise<void> {
+  try {
+    const bundleId = await currentBundleId()
+    storageSet(VERSION_KEY, bundleId)
+    storageSet(PENDING_KEY, null)
+  } catch {
+    // Non-fatal: the next check will still compare against the live bundle.
+  }
+}
+
+async function doInit(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  const result = await LiveUpdate.ready()
+  // ready() performs any pending rollback, so read the actual bundle afterwards.
+  await confirmBundle()
+  if (result.rollback) {
+    // The old bundle is active again; pending state was cleared above so the
+    // update is simply downloaded again on the next check.
+  }
+}
+
+/** Mark the currently running bundle as healthy and stop the rollback timer. */
+export async function initLiveUpdate(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  if (!readyPromise) {
+    readyPromise = doInit().catch(() => {
+      // Allow a retry on the next launch if the native bridge was not ready.
+      readyPromise = null
+    })
+  }
+  return readyPromise
 }
 
 export async function checkForUpdate(): Promise<UpdateManifest | null> {
@@ -49,7 +98,8 @@ export async function checkForUpdate(): Promise<UpdateManifest | null> {
   if (!response.ok) throw new Error(`Update server returned HTTP ${response.status}`)
   const manifest = (await response.json()) as UpdateManifest
   if (!manifest.version || !manifest.url) throw new Error('Invalid update manifest')
-  if (manifest.version === installedVersion()) return null
+  const current = await currentBundleId()
+  if (manifest.version === current || manifest.version === pendingVersion()) return null
   return manifest
 }
 
@@ -64,11 +114,7 @@ export async function downloadUpdate(manifest: UpdateManifest): Promise<void> {
   }
   await LiveUpdate.downloadBundle({ bundleId: manifest.version, url })
   await LiveUpdate.setNextBundle({ bundleId: manifest.version })
-  try {
-    localStorage.setItem(VERSION_KEY, manifest.version)
-  } catch {
-    // Storage unavailable — update still staged for next launch.
-  }
+  storageSet(PENDING_KEY, manifest.version)
 }
 
 export async function applyUpdate(): Promise<void> {

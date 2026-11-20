@@ -9,6 +9,7 @@ import { isConfigured, supabase } from './lib/supabase'
 import { clearAllCaches, clearLegacyCaches } from './lib/localData'
 import { classLabel, sortedClasses } from './lib/school'
 import { useAppUpdate } from './hooks/useAppUpdate'
+import { initLiveUpdate } from './lib/updates'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
 import { TimetableView } from './views/TimetableView'
 import { HomeView } from './views/HomeView'
@@ -503,6 +504,13 @@ function Dashboard({
 }
 
 export default function App() {
+  // Confirm the running bundle immediately, before login/session loading.
+  // The LiveUpdate rollback timer starts when an update is staged, so waiting
+  // for the dashboard to mount makes a healthy update look like a crash.
+  useEffect(() => {
+    void initLiveUpdate()
+  }, [])
+
   const [showSetup, setShowSetup] = useState(false)
   const [sessionReady, setSessionReady] = useState(false)
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null)

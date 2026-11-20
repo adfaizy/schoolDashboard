@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   applyUpdate, checkForUpdate, downloadUpdate, initLiveUpdate,
-  installedVersion, updateSource, type UpdateManifest,
+  installedVersion, pendingVersion, updateSource, type UpdateManifest,
 } from '../lib/updates'
 
 export type UpdateController = {
@@ -16,7 +16,7 @@ export type UpdateController = {
 
 export function useAppUpdate(notify: (message: string, kind: 'success' | 'error') => void): UpdateController {
   const [version, setVersion] = useState<string | null>(() => installedVersion())
-  const [pending, setPending] = useState<string | null>(null)
+  const [pending, setPending] = useState<string | null>(() => pendingVersion())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -31,7 +31,6 @@ export function useAppUpdate(notify: (message: string, kind: 'success' | 'error'
       }
       await downloadUpdate(manifest)
       setPending(manifest.version)
-      setVersion(manifest.version)
       setMessage(`Version ${manifest.version} downloaded. Restart to apply.`)
       notify('Update downloaded — restart to apply', 'success')
     } catch (error) {
@@ -57,6 +56,7 @@ export function useAppUpdate(notify: (message: string, kind: 'success' | 'error'
     const start = async () => {
       await initLiveUpdate()
       setVersion(installedVersion())
+      setPending(pendingVersion())
       await check(false)
     }
     void start()
