@@ -20,7 +20,14 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 from datetime import datetime, date
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# allow importing the standalone phone dialer located in the parent folder
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from school_db import SchoolDB, SINGLETON_ID
+
+try:
+    from phone_dialer import PhoneDialer
+except Exception:
+    PhoneDialer = None
 
 APP_NAME = "School Management System"
 APP_VERSION = "1.0.0"
@@ -1219,6 +1226,26 @@ def make_notices_panel(parent, db):
     return CrudPanel(parent, db, "Notices & Events", "events", cols, fields, title_field="title")
 
 
+def make_phone_panel(parent, db):
+    frame = ttk.Frame(parent)
+    if PhoneDialer is None:
+        ttk.Label(frame, text="phone_dialer.py not found.", padding=12).pack(anchor="w")
+        return frame
+    contacts = []
+    for s in db.students():
+        number = s.get("parent_contact")
+        if number:
+            contacts.append({"name": f"{s.get('name','Student')} (parent)", "number": str(number)})
+    for s in db.staff():
+        # staff table has no phone field; skip unless a contact number is stored
+        number = s.get("phone") or s.get("contact") or s.get("mobile")
+        if number:
+            contacts.append({"name": s.get("name", "Staff"), "number": str(number)})
+    dialer = PhoneDialer(frame, contacts=contacts)
+    frame._dialer = dialer
+    return frame
+
+
 
 # ---------------------------------------------------------------- settings / profile
 class SchoolInfoPanel(ttk.Frame):
@@ -1364,6 +1391,7 @@ class App:
             ("hostel", "🛏  Hostel"),
             ("messages", "💬  Messages"),
             ("notices", "📢  Notices & Events"),
+            ("phone", "📞  Phone Dialer"),
             ("settings", "🏫  School Settings"),
             ("profile", "👤  Principal Profile"),
         ]
@@ -1416,6 +1444,8 @@ class App:
             return make_messages_panel(self.content, db)
         if key == "notices":
             return make_notices_panel(self.content, db)
+        if key == "phone":
+            return make_phone_panel(self.content, db)
         if key == "settings":
             return SchoolInfoPanel(self.content, db)
         if key == "profile":
