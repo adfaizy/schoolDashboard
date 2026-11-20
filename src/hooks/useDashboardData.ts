@@ -79,7 +79,7 @@ function upsertRow(list: Array<Record<string, any>>, row: Record<string, unknown
     : [...list, record]
 }
 
-export function useDashboardData() {
+export function useDashboardData(enabled = true) {
   const [data, setData] = useState<DashboardData>(() => loadLocal())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -88,12 +88,15 @@ export function useDashboardData() {
   dataRef.current = data
 
   const refresh = useCallback(async (): Promise<boolean> => {
-    if (!isConfigured || !supabase) {
+    if (!enabled || !isConfigured || !supabase) {
       setData(loadLocal())
+      setRemoteOk(false)
       return false
     }
     setLoading(true)
     try {
+      const [userRes] = await Promise.all([supabase.auth.getUser()])
+      const uid = userRes?.data?.user?.id
       const [students, schedule, messages, events, profile, settings,
         classes, staff, attendance, examMarks, fees, books,
         routes, transportPassengers, hostelRooms, hostelAssignments] = await Promise.all([
@@ -101,8 +104,8 @@ export function useDashboardData() {
         supabase.from('schedule_items').select('*').order('created_at', { ascending: true }),
         supabase.from('messages').select('*').order('created_at', { ascending: true }),
         supabase.from('events').select('*').order('created_at', { ascending: true }),
-        supabase.from('profiles').select('*').eq('id', SINGLETON_ID).maybeSingle(),
-        supabase.from('settings').select('*').eq('id', SINGLETON_ID).maybeSingle(),
+        uid ? supabase.from('profiles').select('*').eq('id', uid).maybeSingle() : Promise.resolve({ data: null, error: null }),
+        uid ? supabase.from('settings').select('*').eq('user_id', uid).maybeSingle() : Promise.resolve({ data: null, error: null }),
         supabase.from('classes').select('*').order('grade', { ascending: true }),
         supabase.from('staff').select('*').order('created_at', { ascending: true }),
         supabase.from('attendance').select('*'),
@@ -151,7 +154,7 @@ export function useDashboardData() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [enabled])
 
   useEffect(() => {
     void refresh()
@@ -181,6 +184,12 @@ export function useDashboardData() {
       const payload = { ...row }
       if (!payload.id) delete payload.id
       delete payload.created_at
+      // Add user_id for auth-based tables
+      if (supabase && ['students','messages','events','schedule_items'].includes(table)) {
+        const { data: userData } = await supabase.auth.getUser()
+        const uid = userData?.user?.id
+        if (uid) (payload as any).user_id = uid
+      }
       const { error: e } = await supabase!.from(table).upsert(payload, {
         onConflict: ON_CONFLICT[table],
       })
@@ -344,8 +353,10 @@ export function useDashboardData() {
     full_name: string; role_title: string; avatar_url: string | null
   }): Promise<void> {
     const didRemote = await tryRemote(async () => {
+      const { data: userData } = await supabase!.auth.getUser()
+      const uid = userData?.user?.id ?? SINGLETON_ID
       const { error: e } = await supabase!.from('profiles').upsert({
-        id: SINGLETON_ID, ...row, updated_at: new Date().toISOString(),
+        id: uid, ...row, updated_at: new Date().toISOString(),
       })
       if (e) throw e
     })
@@ -358,8 +369,10 @@ export function useDashboardData() {
 
   async function saveSettings(row: { school_name: string | null }): Promise<void> {
     const didRemote = await tryRemote(async () => {
+      const { data: userData } = await supabase!.auth.getUser()
+      const uid = userData?.user?.id ?? SINGLETON_ID
       const { error: e } = await supabase!.from('settings').upsert({
-        id: SINGLETON_ID, ...row, updated_at: new Date().toISOString(),
+        user_id: uid, ...row, updated_at: new Date().toISOString(),
       })
       if (e) throw e
     })

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { BookOpen, Grid3X3, Home, MessageSquare, User, Users } from 'lucide-react'
+import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, LogOut } from 'lucide-react'
 import { DataModal, type FormValues } from './components/DataModal'
 import { SetupScreen } from './components/SetupScreen'
+import { AuthScreen } from './components/AuthScreen'
 import { Toast, type ToastState } from './components/Toast'
 import { modalConfig, type DeleteTarget, type ModalState } from './lib/forms'
-import { useAppUpdate, type UpdateController } from './hooks/useAppUpdate'
+import { isConfigured, supabase } from './lib/supabase'
+import { useAppUpdate } from './hooks/useAppUpdate'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
 import { TimetableView } from './views/TimetableView'
 import { HomeView } from './views/HomeView'
@@ -25,10 +27,11 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function Dashboard({
-  controller, onConnect,
+  controller, onConnect, onSignOut,
 }: {
   controller: DashboardController
   onConnect: () => void
+  onSignOut: () => void
 }) {
   const [activeTab, setActiveTab] = useState('home')
   const [moduleId, setModuleId] = useState<string | null>(null)
@@ -178,6 +181,11 @@ function Dashboard({
       </div>
 
       <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/80 pb-6 pt-3 px-6 z-50">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <button onClick={onSignOut} className="text-[10px] text-slate-500 flex items-center gap-1 hover:text-slate-300">
+            <LogOut size={12} /> Sign out
+          </button>
+        </div>
         <ul className="flex justify-between items-center">
           {[
             { id: 'home', icon: <Home size={22} />, label: 'Home' },
@@ -246,15 +254,66 @@ function Dashboard({
 }
 
 export default function App() {
-  const controller = useDashboardData()
   const [showSetup, setShowSetup] = useState(false)
+  const [sessionReady, setSessionReady] = useState(false)
+  const [hasSession, setHasSession] = useState(false)
+
+  useEffect(() => {
+    if (!isConfigured || !supabase) {
+      setSessionReady(true)
+      return
+    }
+    let mounted = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      setHasSession(Boolean(data.session))
+      setSessionReady(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasSession(Boolean(session))
+      setSessionReady(true)
+    })
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
+    }
+  }, [])
+
+  async function handleSignOut() {
+    if (!supabase) return
+    await supabase.auth.signOut()
+  }
+
+  const controller = useDashboardData(hasSession)
+
+  if (!isConfigured) {
+    return (
+      <Shell>
+        <SetupScreen onCancel={() => setShowSetup(false)} />
+      </Shell>
+    )
+  }
+  if (!sessionReady) {
+    return (
+      <Shell>
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
+      </Shell>
+    )
+  }
+  if (!hasSession) {
+    return (
+      <Shell>
+        {showSetup ? <SetupScreen onCancel={() => setShowSetup(false)} /> : <AuthScreen onShowSetup={() => setShowSetup(true)} />}
+      </Shell>
+    )
+  }
 
   return (
     <Shell>
       {showSetup ? (
         <SetupScreen onCancel={() => setShowSetup(false)} />
       ) : (
-        <Dashboard controller={controller} onConnect={() => setShowSetup(true)} />
+        <Dashboard controller={controller} onConnect={() => setShowSetup(true)} onSignOut={handleSignOut} />
       )}
     </Shell>
   )

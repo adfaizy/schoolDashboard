@@ -1,33 +1,46 @@
-import { useState, type FormEvent } from 'react'
-import { AlertCircle, GraduationCap, Loader2, Lock, Mail } from 'lucide-react'
+import { useState } from 'react'
+import { AlertCircle, LogIn, UserPlus, Database } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
-export function AuthScreen({ onConfigure }: { onConfigure: () => void }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [fullName, setFullName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
+  async function submit() {
     if (!supabase) return
-    setBusy(true)
     setError(null)
     setNotice(null)
+    const e = email.trim()
+    if (!e || !password) {
+      setError('Email and password are required.')
+      return
+    }
+    if (mode === 'signup' && password.length < 6) {
+      setError('Password must be at least 6 characters.')
+      return
+    }
+    setBusy(true)
     try {
-      if (mode === 'signin') {
-        const { error: e } = await supabase.auth.signInWithPassword({ email, password })
-        if (e) throw e
+      if (mode === 'login') {
+        const { error: err } = await supabase.auth.signInWithPassword({ email: e, password })
+        if (err) throw err
       } else {
-        const { error: e } = await supabase.auth.signUp({ email, password })
-        if (e) throw e
-        setNotice('Account created. If email confirmation is on, check your inbox, then sign in.')
-        setMode('signin')
+        const { error: err } = await supabase.auth.signUp({
+          email: e,
+          password,
+          options: { data: { full_name: fullName.trim() || 'School Principal' } },
+        })
+        if (err) throw err
+        setNotice('Account created. If email confirmation is enabled, check your inbox. Otherwise you can sign in now.')
+        setMode('login')
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to continue')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed.')
     } finally {
       setBusy(false)
     }
@@ -38,42 +51,50 @@ export function AuthScreen({ onConfigure }: { onConfigure: () => void }) {
       <div className="absolute -top-24 -right-24 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl" />
       <div className="relative">
         <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-6">
-          <GraduationCap size={30} />
+          {mode === 'login' ? <LogIn size={28} /> : <UserPlus size={28} />}
         </div>
-        <h1 className="text-2xl font-bold text-slate-100 tracking-wide">School Dashboard</h1>
-        <p className="text-sm text-slate-400 mt-2">
-          {mode === 'signin' ? 'Sign in to manage your school.' : 'Create your administrator account.'}
+        <h1 className="text-2xl font-bold text-slate-100 tracking-wide">
+          {mode === 'login' ? 'Sign in' : 'Create account'}
+        </h1>
+        <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+          {mode === 'login'
+            ? 'Sign in to manage your school.'
+            : 'Sign up to set up your school dashboard.'}
         </p>
 
-        <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
-          <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Email</label>
-            <div className="relative">
-              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <div className="mt-7 flex flex-col gap-4">
+          {mode === 'signup' && (
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Full name</label>
               <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="principal@school.edu"
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-200 focus:outline-none focus:border-cyan-500/60"
+                value={fullName}
+                onChange={(e) => { setFullName(e.target.value); setError(null) }}
+                placeholder="Principal name"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/60"
               />
             </div>
+          )}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Email</label>
+            <input
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(null) }}
+              type="email"
+              autoComplete="email"
+              placeholder="you@school.com"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/60"
+            />
           </div>
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Password</label>
-            <div className="relative">
-              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-200 focus:outline-none focus:border-cyan-500/60"
-              />
-            </div>
+            <input
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(null) }}
+              type="password"
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              placeholder="••••••••"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/60"
+            />
           </div>
 
           {error && (
@@ -89,24 +110,29 @@ export function AuthScreen({ onConfigure }: { onConfigure: () => void }) {
           )}
 
           <button
-            type="submit"
+            onClick={submit}
             disabled={busy}
-            className="mt-2 w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-60 text-slate-950 font-bold text-sm rounded-xl py-3 flex items-center justify-center gap-2"
+            className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-xl py-3 disabled:opacity-60"
           >
-            {busy && <Loader2 size={16} className="animate-spin" />}
-            {busy ? 'Please wait...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Sign up'}
           </button>
-        </form>
 
-        <button
-          onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); setNotice(null) }}
-          className="mt-5 w-full text-center text-xs text-cyan-400 font-medium"
-        >
-          {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-        </button>
-        <button onClick={onConfigure} className="mt-4 w-full text-center text-[11px] text-slate-500">
-          Change Supabase connection
-        </button>
+          <button
+            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setNotice(null) }}
+            className="text-xs text-cyan-400 font-semibold"
+          >
+            {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+          </button>
+
+          {onShowSetup && (
+            <button
+              onClick={onShowSetup}
+              className="mt-2 text-[10px] text-slate-500 flex items-center justify-center gap-1.5"
+            >
+              <Database size={12} /> Change Supabase connection
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
