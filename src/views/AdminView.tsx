@@ -235,7 +235,7 @@ export function AdminView({
       </div>
 
       {deleteTarget && (
-        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm p-6 fade-in-up">
+        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#cbd5e1]/80 backdrop-blur-sm p-6 fade-in-up">
           <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
             <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto mb-3">
               <AlertTriangle size={20} />

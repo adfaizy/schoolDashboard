@@ -82,7 +82,7 @@ export function HomeView({
             aria-label="Add notice"
           >
             <Bell size={20} />
-            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 border-2 border-slate-900 rounded-full" />
+            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 border-2 border-slate-800 rounded-full" />
           </button>
         </div>
       </header>

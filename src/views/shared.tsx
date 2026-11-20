@@ -67,7 +67,7 @@ export function RowActions({ onEdit, onDelete, onTransfer, transferLabel = 'Move
 export function avatarSrc(url: string | null | undefined, name: string): string {
   if (url) return url
   const initials = name.split(' ').map((word) => word[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?'
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#2563EB"/><text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" fill="#ffffff">${initials}</text></svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#155EEF"/><text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" fill="#ffffff">${initials}</text></svg>`
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
@@ -103,7 +103,7 @@ export function TransferDialog({ title, description, options, value, onChange, o
   subjectLabel?: string
 }) {
   return (
-    <div className="absolute inset-0 z-[76] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm p-6 fade-in-up">
+    <div className="absolute inset-0 z-[76] flex items-center justify-center bg-[#cbd5e1]/80 backdrop-blur-sm p-6 fade-in-up">
       <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-5">
         <div className="flex items-start justify-between gap-3">
           <div>

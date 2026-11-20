@@ -3,31 +3,31 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // shadcn-style light tokens. The old dark palette is inverted so every
-      // existing slate utility keeps its role: 950 = page, 900 = card,
+      // Sharp shadcn-style light tokens. The old dark palette stays inverted so
+      // every existing slate utility keeps its role: 950 = page, 900 = card,
       // 800/700 = border, 100 = heading, cyan = primary (blue).
       colors: {
         slate: {
-          50: '#18181b',
-          100: '#18181b',
-          200: '#27272a',
-          300: '#3f3f46',
-          400: '#52525b',
-          500: '#71717a',
-          600: '#a1a1aa',
-          700: '#d4d4d8',
-          800: '#e4e4e7',
+          50: '#0f172a',
+          100: '#0f172a',
+          200: '#1e293b',
+          300: '#334155',
+          400: '#475569',
+          500: '#64748b',
+          600: '#94a3b8',
+          700: '#94a3b8',
+          800: '#cbd5e1',
           900: '#ffffff',
-          950: '#fafafa',
+          950: '#f1f3f7',
         },
         cyan: {
           50: '#eff6ff',
           100: '#dbeafe',
           200: '#bfdbfe',
           300: '#1e40af',
-          400: '#2563eb',
-          500: '#2563eb',
-          600: '#1d4ed8',
+          400: '#155eef',
+          500: '#155eef',
+          600: '#1247c7',
           700: '#1e40af',
           800: '#1e3a8a',
           900: '#172554',

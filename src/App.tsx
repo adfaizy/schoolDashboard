@@ -43,8 +43,8 @@ function periodKey(item: { period_no?: number | null; time?: string | null }): s
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#fafafa] flex items-center justify-center sm:p-6 font-sans selection:bg-cyan-500/30">
-      <div className="w-full h-screen sm:h-[850px] max-w-[400px] bg-slate-950 relative overflow-hidden sm:rounded-[2.5rem] sm:border-[8px] border-slate-900 shadow-2xl flex flex-col">
+    <div className="min-h-screen bg-[#f1f3f7] flex items-center justify-center sm:p-6 font-sans selection:bg-cyan-500/30">
+      <div className="w-full h-screen sm:h-[850px] max-w-[400px] bg-slate-950 relative overflow-hidden sm:rounded-[2.5rem] sm:border-[8px] border-slate-800 shadow-2xl flex flex-col">
         {children}
       </div>
     </div>
@@ -400,7 +400,7 @@ function Dashboard({
         {activeTab === 'profile' && <ProfileView {...viewProps} onConnect={onConnect} />}
       </div>
 
-      <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/80 pb-6 pt-3 px-6 z-50">
+      <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-800/80 pb-6 pt-3 px-6 z-50">
         <div className="flex items-center gap-2 mb-2 px-1">
           {isAdmin ? (
             <button onClick={() => { setActiveTab('admin'); setModuleId(null) }} className="shrink-0 px-2.5 py-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-[10px] font-bold text-cyan-300 flex items-center gap-1 hover:bg-cyan-500/20">

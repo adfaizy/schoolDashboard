@@ -68,7 +68,7 @@ export function ProfileView({ controller, onEdit, onNotify, onSignOut, onConnect
     <div className="fade-in-up">
       <div className="px-6 pt-16 pb-8 flex flex-col items-center">
         <div className="relative mb-4">
-          <img src={avatarSrc(profile?.avatar_url ?? DEFAULT_AVATAR, name)} alt="Profile" className="w-24 h-24 rounded-full border-4 border-slate-900 shadow-xl object-cover" />
+          <img src={avatarSrc(profile?.avatar_url ?? DEFAULT_AVATAR, name)} alt="Profile" className="w-24 h-24 rounded-full border-4 border-slate-800 shadow-xl object-cover" />
           <button
             onClick={takePhoto}
             className="absolute bottom-0 right-0 w-9 h-9 bg-cyan-500 rounded-full flex items-center justify-center text-slate-950 border-4 border-slate-950 hover:scale-105 active:scale-95 transition-transform"
