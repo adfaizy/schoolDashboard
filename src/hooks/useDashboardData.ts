@@ -41,7 +41,7 @@ const ON_CONFLICT: Partial<Record<TableName | ModuleTable, string>> = {
   hostel_assignments: 'room_id,student_id',
 }
 
-function errorMessage(error: unknown): string {
+function describeError(error: unknown): { message: string; text: string } {
   let raw = ''
   let code = ''
   if (error instanceof Error) {
@@ -53,8 +53,22 @@ function errorMessage(error: unknown): string {
   } else {
     raw = String(error ?? '')
   }
+  return { message: raw, text: `${code} ${raw}`.toLowerCase() }
+}
 
-  const text = `${code} ${raw}`.toLowerCase()
+function isSessionError(text: string): boolean {
+  return (
+    text.includes('jwt') ||
+    text.includes('token') ||
+    text.includes('401') ||
+    text.includes('unauthorized') ||
+    text.includes('session') ||
+    text.includes('user not found')
+  )
+}
+
+function errorMessage(error: unknown): string {
+  const { message: raw, text } = describeError(error)
   if (text.includes('pgrst205') || text.includes('could not find the table') || text.includes('42p01')) {
     return 'Supabase tables are missing — run supabase/schema-auth-multi.sql in SQL Editor, then reopen the app.'
   }
@@ -149,9 +163,16 @@ export function useDashboardData(enabled = true, ownerId: string | null = null, 
       setError(null)
       return true
     } catch (e) {
-      setData(loadLocal(ownerId))
+      const { text } = describeError(e)
+      if (isSessionError(text)) {
+        setData({ ...emptyData })
+        setError('Your session expired. Please sign in again.')
+        if (supabase) await supabase.auth.signOut().catch(() => undefined)
+      } else {
+        setData(loadLocal(ownerId))
+        setError(errorMessage(e))
+      }
       setRemoteOk(false)
-      setError(errorMessage(e))
       return false
     } finally {
       setLoading(false)
@@ -175,8 +196,14 @@ export function useDashboardData(enabled = true, ownerId: string | null = null, 
       await refresh()
       return true
     } catch (e) {
+      const { text } = describeError(e)
       setRemoteOk(false)
-      setError(errorMessage(e))
+      if (isSessionError(text)) {
+        setError('Your session expired. Please sign in again.')
+        if (supabase) await supabase.auth.signOut().catch(() => undefined)
+      } else {
+        setError(errorMessage(e))
+      }
       return false
     }
   }

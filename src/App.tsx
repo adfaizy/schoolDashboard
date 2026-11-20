@@ -6,6 +6,7 @@ import { AuthScreen } from './components/AuthScreen'
 import { Toast, type ToastState } from './components/Toast'
 import { modalConfig, type DeleteTarget, type ModalState } from './lib/forms'
 import { isConfigured, supabase } from './lib/supabase'
+import { clearLegacyCaches } from './lib/localData'
 import { useAppUpdate } from './hooks/useAppUpdate'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
 import { TimetableView } from './views/TimetableView'
@@ -291,6 +292,8 @@ export default function App() {
   const [viewing, setViewing] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
+    // Old no-login versions stored shared demo data locally. Remove it on launch.
+    clearLegacyCaches()
     if (!isConfigured || !supabase) {
       setSessionReady(true)
       return
