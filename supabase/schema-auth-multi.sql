@@ -13,6 +13,13 @@ create extension if not exists pgcrypto;
 -- You can also promote any account later with:
 --   update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');
 
+-- Drop dependent triggers before their functions and tables.
+drop trigger if exists on_auth_user_created on auth.users;
+drop trigger if exists prevent_role_escalation on public.profiles;
+drop function if exists public.is_admin() cascade;
+drop function if exists public.handle_new_user() cascade;
+drop function if exists public.prevent_role_escalation() cascade;
+
 -- ---------------------------------------------------------------- drop old
 drop table if exists public.hostel_assignments cascade;
 drop table if exists public.hostel_rooms cascade;
@@ -30,10 +37,6 @@ drop table if exists public.classes cascade;
 drop table if exists public.students cascade;
 drop table if exists public.settings cascade;
 drop table if exists public.profiles cascade;
-
-drop function if exists public.is_admin();
-drop function if exists public.handle_new_user();
-drop function if exists public.prevent_role_escalation();
 
 -- ---------------------------------------------------------------- tables
 create table public.profiles (
