@@ -306,6 +306,11 @@ end $$;
 grant select, insert, update, delete on public.profiles to authenticated;
 grant select, insert, update, delete on public.settings to authenticated;
 
+-- Promote an existing admin email BEFORE installing the role guard.
+update public.profiles
+set role = 'admin'
+where id in (select id from auth.users where lower(email) = 'admin@school.com');
+
 -- Prevent a school account from making itself admin by editing its profile.
 create or replace function public.prevent_role_escalation()
 returns trigger
@@ -355,11 +360,6 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
-
--- If an admin account already existed before this migration, promote it.
-update public.profiles
-set role = 'admin'
-where id in (select id from auth.users where lower(email) = 'admin@school.com');
 
 -- Done. New accounts start with empty data. School accounts see only their own rows;
 -- admin@school.com sees all schools and can manage any of them.
