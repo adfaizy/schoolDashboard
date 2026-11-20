@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#164e63"/>
-      <stop offset="1" stop-color="#0f172a"/>
+      <stop offset="0" stop-color="#1e40af"/>
+      <stop offset="1" stop-color="#020617"/>
     </linearGradient>
     <linearGradient id="shirt" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#22d3ee"/>
-      <stop offset="1" stop-color="#0891b2"/>
+      <stop offset="0" stop-color="#0b5cff"/>
+      <stop offset="1" stop-color="#7c3aed"/>
     </linearGradient>
   </defs>
   <circle cx="75" cy="75" r="75" fill="url(#bg)"/>
