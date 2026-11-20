@@ -1,14 +1,15 @@
 """
 Shared data layer for the School Management System.
 
-- Talks to the same Supabase project as the Android app (project yecmhcwgnivgxjihrhsa).
-- Falls back to a local JSON mirror (school_local.json) when there is no internet,
-  so every screen still works offline. Changes made offline are kept locally and
-  re-synced the next time the app runs online.
+- Talks to the same Supabase project as the web/Android app (project yecmhcwgnivgxjihrhsa).
+- Uses Supabase Auth: every school account only sees its own rows; admin@school.com
+  can view and manage every school.
+- Falls back to a per-account local JSON mirror when there is no internet.
 """
 
 import json
 import os
+import urllib.parse
 import urllib.request
 import urllib.error
 import uuid
@@ -18,7 +19,9 @@ SUPABASE_URL = "https://yecmhcwgnivgxjihrhsa.supabase.co"
 # Publishable (public) key — same one baked into the Android app.
 SUPABASE_KEY = "sb_publishable_QTm5lxUoZNE0lQr-cqG8uQ_W0pArJCF"
 REST = f"{SUPABASE_URL}/rest/v1"
-LOCAL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "school_local.json")
+AUTH = f"{SUPABASE_URL}/auth/v1"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SESSION_PATH = os.path.join(BASE_DIR, "auth_session.json")
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"
 
 
@@ -34,13 +37,38 @@ class SupabaseError(Exception):
     pass
 
 
-def _request(method, path, body=None, headers=None):
+def _http(method, url, body=None, token=None):
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    hdrs = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {token or SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    req.headers = hdrs
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8")
+            return resp.status, (json.loads(raw) if raw.strip() else [])
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        try:
+            parsed = json.loads(raw)
+            message = parsed.get("msg") or parsed.get("message") or parsed.get("error_description") or raw
+        except Exception:
+            message = raw
+        raise SupabaseError(f"{e.code}: {message}")
+    except Exception as e:
+        raise SupabaseError(str(e))
+
+
+def _request(method, path, body=None, headers=None, token=None):
     url = f"{REST}/{path}"
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     hdrs = {
         "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Authorization": f"Bearer {token or SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
     if headers:
@@ -53,28 +81,186 @@ def _request(method, path, body=None, headers=None):
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8", "replace")
         raise SupabaseError(f"{e.code}: {raw}")
-    except Exception as e:  # network, timeout, DNS...
+    except Exception as e:
         raise SupabaseError(str(e))
 
 
-class SchoolDB:
-    """Small helper around the Supabase REST API with a JSON offline mirror."""
+# ---------------------------------------------------------------- auth session
+def load_session():
+    try:
+        with open(SESSION_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if data.get("access_token") and data.get("user"):
+            return data
+    except Exception:
+        pass
+    return None
 
-    def __init__(self):
+
+def save_session(session):
+    try:
+        with open(SESSION_PATH, "w", encoding="utf-8") as fh:
+            json.dump(session, fh, indent=2)
+    except OSError:
+        pass
+
+
+def clear_session():
+    try:
+        os.remove(SESSION_PATH)
+    except OSError:
+        pass
+
+
+def sign_up(email, password, full_name):
+    body = {
+        "email": email.strip(),
+        "password": password,
+        "data": {"full_name": full_name.strip() or "Principal"},
+    }
+    _, data = _http("POST", f"{AUTH}/signup", body)
+    if isinstance(data, dict) and data.get("error"):
+        raise SupabaseError(str(data.get("error")))
+    session = {
+        "access_token": data.get("access_token"),
+        "refresh_token": data.get("refresh_token"),
+        "user": data.get("user") or {},
+        "role": "school",
+        "viewing_user_id": None,
+    }
+    if not session["access_token"]:
+        raise SupabaseError("Account created. Please sign in with your email and password.")
+    save_session(session)
+    return session
+
+
+def sign_in(email, password):
+    body = {"email": email.strip(), "password": password}
+    _, data = _http("POST", f"{AUTH}/token?grant_type=password", body)
+    if isinstance(data, dict) and data.get("error"):
+        raise SupabaseError(str(data.get("error")))
+    token = data.get("access_token")
+    user = data.get("user") or {}
+    if not token or not user.get("id"):
+        raise SupabaseError("Sign in failed. Check your email and password.")
+    session = {
+        "access_token": token,
+        "refresh_token": data.get("refresh_token"),
+        "user": user,
+        "role": "school",
+        "viewing_user_id": None,
+    }
+    save_session(session)
+    return session
+
+
+def refresh_session(session):
+    token = session.get("refresh_token")
+    if not token:
+        return session
+    _, data = _http("POST", f"{AUTH}/token?grant_type=refresh_token", {"refresh_token": token})
+    if data.get("access_token"):
+        session["access_token"] = data["access_token"]
+        session["refresh_token"] = data.get("refresh_token", token)
+        save_session(session)
+    return session
+
+
+def fetch_role(session):
+    token = session.get("access_token")
+    uid = (session.get("user") or {}).get("id")
+    if not token or not uid:
+        return "school"
+    try:
+        _, rows = _request("GET", f"profiles?select=role&id=eq.{uid}", token=token)
+        if isinstance(rows, list) and rows:
+            return rows[0].get("role", "school")
+    except SupabaseError:
+        pass
+    return "school"
+
+
+class SchoolDB:
+    """Supabase REST helper with a JSON offline mirror scoped to one account."""
+
+    def __init__(self, session=None):
+        self.session = session or load_session()
         self.offline = False
+        self.local = {}
+        self.local_path = self._local_path()
         self.local = self._load_local()
+
+    # ---------- session / ownership ----------
+    @property
+    def token(self):
+        return (self.session or {}).get("access_token")
+
+    @property
+    def user_id(self):
+        return ((self.session or {}).get("user") or {}).get("id")
+
+    @property
+    def email(self):
+        return ((self.session or {}).get("user") or {}).get("email", "")
+
+    @property
+    def role(self):
+        return (self.session or {}).get("role", "school")
+
+    @property
+    def viewing_user_id(self):
+        return (self.session or {}).get("viewing_user_id")
+
+    @property
+    def owner_id(self):
+        return self.viewing_user_id or self.user_id
+
+    def set_role(self, role):
+        self.session["role"] = role
+        save_session(self.session)
+
+    def set_viewing(self, user_id):
+        self.session["viewing_user_id"] = user_id
+        save_session(self.session)
+        self.local_path = self._local_path()
+        self.local = self._load_local()
+
+    def exit_viewing(self):
+        self.set_viewing(None)
+
+    def _local_path(self):
+        uid = self.owner_id or "anonymous"
+        return os.path.join(BASE_DIR, f"school_local_{uid}.json")
+
+    # ---------- helpers ----------
+    def _owner_filter(self, table):
+        if not self.owner_id:
+            return ""
+        if table == "profiles":
+            return f"&id=eq.{self.owner_id}"
+        return f"&user_id=eq.{self.owner_id}"
+
+    def _owned(self, table, row):
+        row = dict(row)
+        if not self.owner_id:
+            return row
+        if table == "profiles":
+            row.setdefault("id", self.owner_id)
+        else:
+            row.setdefault("user_id", self.owner_id)
+        return row
 
     # ---------- local mirror ----------
     def _load_local(self):
         try:
-            with open(LOCAL_PATH, "r", encoding="utf-8") as fh:
+            with open(self.local_path, "r", encoding="utf-8") as fh:
                 return json.load(fh)
         except Exception:
             return {}
 
     def _save_local(self):
         try:
-            with open(LOCAL_PATH, "w", encoding="utf-8") as fh:
+            with open(self.local_path, "w", encoding="utf-8") as fh:
                 json.dump(self.local, fh, indent=2, default=str)
         except OSError:
             pass
@@ -96,10 +282,13 @@ class SchoolDB:
         self._save_local()
 
     # ---------- REST ----------
+    def _req(self, method, path, body=None, headers=None):
+        return _request(method, path, body, headers, token=self.token)
+
     def select(self, table, params=""):
         try:
-            _, rows = _request("GET", f"{table}?select=*{params}")
-            if isinstance(rows, dict):  # maybeSingle style errors
+            _, rows = self._req("GET", f"{table}?select=*{params}{self._owner_filter(table)}")
+            if isinstance(rows, dict):
                 rows = [rows]
             self.offline = False
             self.local[table] = rows
@@ -109,9 +298,17 @@ class SchoolDB:
             self.offline = True
             return self._local_list(table)
 
+    def select_unfiltered(self, table, params=""):
+        """Admin-only helper: reads rows across all schools."""
+        try:
+            _, rows = self._req("GET", f"{table}?select=*{params}")
+            return rows if isinstance(rows, list) else [rows]
+        except SupabaseError:
+            return []
+
     def get_one(self, table, row_id, id_field="id"):
         try:
-            _, rows = _request("GET", f"{table}?select=*&{id_field}=eq.{row_id}")
+            _, rows = self._req("GET", f"{table}?select=*&{id_field}=eq.{row_id}{self._owner_filter(table)}")
             self.offline = False
             if isinstance(rows, list) and rows:
                 return rows[0]
@@ -120,12 +317,18 @@ class SchoolDB:
             self.offline = True
             return next((r for r in self._local_list(table) if r.get(id_field) == row_id), None)
 
+    @staticmethod
+    def _has_id(table):
+        return table not in ("settings", "attendance")
+
     def insert(self, table, row):
-        row = dict(row)
-        row.setdefault("id", new_id())
-        row.setdefault("created_at", now())
+        row = self._owned(table, row)
+        if self._has_id(table):
+            row.setdefault("id", new_id())
+        if table not in ("attendance", "transport_passengers", "hostel_assignments"):
+            row.setdefault("created_at", now())
         try:
-            _request("POST", table, row, headers={"Prefer": "return=representation"})
+            self._req("POST", table, row, headers={"Prefer": "return=representation"})
             self.offline = False
             self._local_upsert(table, row)
             return row
@@ -135,11 +338,11 @@ class SchoolDB:
             return row
 
     def update(self, table, row_id, updates, id_field="id"):
+        updates = self._owned(table, updates)
         try:
-            _request("PATCH", f"{table}?{id_field}=eq.{row_id}", updates,
-                     headers={"Prefer": "return=minimal"})
+            self._req("PATCH", f"{table}?{id_field}=eq.{row_id}{self._owner_filter(table)}",
+                      updates, headers={"Prefer": "return=minimal"})
             self.offline = False
-            # update local mirror
             for r in self.local.get(table, []):
                 if r.get(id_field) == row_id:
                     r.update(updates)
@@ -155,12 +358,13 @@ class SchoolDB:
             return False
 
     def upsert(self, table, row, on_conflict=None):
-        row = dict(row)
-        row.setdefault("id", new_id())
+        row = self._owned(table, row)
+        if self._has_id(table):
+            row.setdefault("id", new_id())
         try:
             qs = f"?on_conflict={on_conflict}" if on_conflict else ""
-            _request("POST", f"{table}{qs}", row,
-                     headers={"Prefer": "resolution=merge-duplicates,return=minimal"})
+            self._req("POST", f"{table}{qs}", row,
+                      headers={"Prefer": "resolution=merge-duplicates,return=minimal"})
             self.offline = False
             self._local_upsert(table, row)
             return row
@@ -171,8 +375,8 @@ class SchoolDB:
 
     def delete(self, table, row_id, id_field="id"):
         try:
-            _request("DELETE", f"{table}?{id_field}=eq.{row_id}",
-                     headers={"Prefer": "return=minimal"})
+            self._req("DELETE", f"{table}?{id_field}=eq.{row_id}{self._owner_filter(table)}",
+                      headers={"Prefer": "return=minimal"})
             self.offline = False
         except SupabaseError:
             self.offline = True

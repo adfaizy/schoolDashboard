@@ -22,7 +22,10 @@ from datetime import datetime, date
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # allow importing the standalone phone dialer located in the parent folder
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from school_db import SchoolDB, SINGLETON_ID
+from school_db import (
+    SchoolDB, SINGLETON_ID, sign_in, sign_up, fetch_role,
+    load_session, save_session, clear_session, SupabaseError,
+)
 
 try:
     from phone_dialer import PhoneDialer
@@ -1305,9 +1308,10 @@ class SchoolInfoPanel(ttk.Frame):
                "updated_at": now()}
         rows = self.db.select("settings")
         if rows:
-            self.db.update("settings", rows[0]["id"], row)
+            target = rows[0].get("user_id") or rows[0].get("id") or self.db.owner_id
+            self.db.update("settings", target, row, id_field="user_id")
         else:
-            row["id"] = SINGLETON_ID
+            row["user_id"] = self.db.owner_id
             self.db.insert("settings", row)
         self.msg.set("Saved.")
         self.load()
@@ -1349,7 +1353,7 @@ class ProfilePanel(ttk.Frame):
         if rows:
             self.db.update("profiles", rows[0]["id"], row)
         else:
-            row["id"] = SINGLETON_ID
+            row["id"] = self.db.owner_id
             self.db.insert("profiles", row)
         self.msg.set("Saved.")
         self.load()
@@ -1359,11 +1363,183 @@ def now():
     return datetime.now().isoformat(timespec="seconds")
 
 
+# ---------------------------------------------------------------- auth dialog
+class AuthDialog(tk.Toplevel):
+    """Small modal sign-in / sign-up window shown before the main system."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("School Management System - Sign in")
+        self.geometry("430x520")
+        self.resizable(False, False)
+        self.configure(bg=COLORS["bg"])
+        self.transient(parent)
+        self.grab_set()
+        self.result = None
+        self.mode = "login"
+
+        card = tk.Frame(self, bg=COLORS["card"], padx=24, pady=24,
+                        highlightthickness=1, highlightbackground="#1e293b")
+        card.pack(fill="both", expand=True, padx=18, pady=18)
+
+        self.icon = tk.Label(card, text="🏫", font=("Segoe UI", 30), bg=COLORS["card"], fg=COLORS["accent"])
+        self.icon.pack()
+        self.heading = tk.Label(card, text="Sign in to your school", font=("Segoe UI", 17, "bold"),
+                                bg=COLORS["card"], fg=COLORS["text"])
+        self.heading.pack(pady=(8, 2))
+        self.sub = tk.Label(card, text="Each account has its own students, staff and records.",
+                            font=("Segoe UI", 9), bg=COLORS["card"], fg="#64748b")
+        self.sub.pack(pady=(0, 18))
+
+        self.name_var = tk.StringVar()
+        self.email_var = tk.StringVar()
+        self.pass_var = tk.StringVar()
+        self.error_var = tk.StringVar()
+
+        self.name_row = tk.Frame(card, bg=COLORS["card"])
+        tk.Label(self.name_row, text="Principal name", bg=COLORS["card"], fg="#94a3b8",
+                 font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        tk.Entry(self.name_row, textvariable=self.name_var, font=("Segoe UI", 11),
+                 bg="#0f172a", fg="#e2e8f0", insertbackground="#e2e8f0", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
+
+        for label, var, show in (("Email", self.email_var, None), ("Password", self.pass_var, "*")):
+            row = tk.Frame(card, bg=COLORS["card"])
+            tk.Label(row, text=label, bg=COLORS["card"], fg="#94a3b8",
+                     font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            tk.Entry(row, textvariable=var, show=show or "", font=("Segoe UI", 11),
+                     bg="#0f172a", fg="#e2e8f0", insertbackground="#e2e8f0", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
+            row.pack(fill="x")
+
+        self.error_lbl = tk.Label(card, textvariable=self.error_var, bg=COLORS["card"],
+                                  fg="#fda4af", font=("Segoe UI", 9), wraplength=350, justify="left")
+        self.error_lbl.pack(fill="x", pady=(2, 6))
+
+        self.submit = tk.Button(card, text="Sign in", command=self.do_submit,
+                                bg=COLORS["accent"], fg="#0f172a", font=("Segoe UI", 10, "bold"),
+                                relief="flat", cursor="hand2")
+        self.submit.pack(fill="x", ipady=8)
+
+        self.switch = tk.Button(card, text="New here? Create a school account", command=self.toggle,
+                                bg=COLORS["card"], fg=COLORS["accent"], font=("Segoe UI", 9),
+                                relief="flat", cursor="hand2")
+        self.switch.pack(pady=(8, 0))
+
+        tk.Label(card, text="Administrator: admin@school.com", bg=COLORS["card"],
+                 fg="#475569", font=("Segoe UI", 8)).pack(side="bottom", pady=(10, 0))
+
+    def toggle(self):
+        self.error_var.set("")
+        self.mode = "signup" if self.mode == "login" else "login"
+        if self.mode == "signup":
+            self.name_row.pack(fill="x", before=self.error_lbl)
+            self.heading.configure(text="Create school account")
+            self.sub.configure(text="Your students, staff and records stay in your own account.")
+            self.submit.configure(text="Sign up")
+            self.switch.configure(text="Already registered? Sign in")
+        else:
+            self.name_row.pack_forget()
+            self.heading.configure(text="Sign in to your school")
+            self.sub.configure(text="Each account has its own students, staff and records.")
+            self.submit.configure(text="Sign in")
+            self.switch.configure(text="New here? Create a school account")
+
+    def do_submit(self):
+        email = self.email_var.get().strip()
+        password = self.pass_var.get()
+        if not email or not password:
+            self.error_var.set("Email and password are required.")
+            return
+        if len(password) < 6:
+            self.error_var.set("Password must be at least 6 characters.")
+            return
+        self.submit.configure(state="disabled", text="Please wait…")
+        self.update_idletasks()
+        try:
+            if self.mode == "signup":
+                session = sign_up(email, password, self.name_var.get())
+            else:
+                session = sign_in(email, password)
+            self.result = session
+            self.destroy()
+        except SupabaseError as e:
+            self.error_var.set(str(e))
+            self.submit.configure(state="normal", text="Sign up" if self.mode == "signup" else "Sign in")
+        except Exception as e:
+            self.error_var.set(str(e))
+            self.submit.configure(state="normal", text="Sign up" if self.mode == "signup" else "Sign in")
+
+
+# ---------------------------------------------------------------- admin panel
+class AdminPanel(tk.Frame):
+    """Lists every school account; admin can open one to view/manage its data."""
+
+    def __init__(self, parent, db, app):
+        super().__init__(parent, bg=COLORS["bg"])
+        self.db = db
+        self.app = app
+
+        head = tk.Frame(self, bg=COLORS["bg"])
+        head.pack(fill="x", padx=20, pady=(18, 10))
+        tk.Label(head, text="Admin Console", font=("Segoe UI", 20, "bold"),
+                 bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
+        tk.Label(head, text="Select a school to view and manage its records.",
+                 font=("Segoe UI", 10), bg=COLORS["bg"], fg="#64748b").pack(anchor="w", pady=(3, 0))
+
+        table_frame = tk.Frame(self, bg=COLORS["card"], padx=10, pady=10,
+                               highlightthickness=1, highlightbackground="#1e293b")
+        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        cols = ("school", "principal", "students")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=16)
+        for c, label, width in (("school", "School", 320), ("principal", "Principal", 300), ("students", "Students", 100)):
+            self.tree.heading(c, text=label)
+            self.tree.column(c, width=width, anchor="w")
+        self.tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        scroll.pack(side="right", fill="y")
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.bind("<Double-1>", lambda _e: self.open_selected())
+
+        btns = tk.Frame(self, bg=COLORS["bg"])
+        btns.pack(fill="x", padx=20, pady=(0, 18))
+        ttk.Button(btns, text="Refresh", command=self.load).pack(side="left", padx=(0, 8))
+        ttk.Button(btns, text="Open selected school", command=self.open_selected).pack(side="left")
+        self.load()
+
+    def load(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        profiles = self.db.select_unfiltered("profiles", "&role=eq.school&order=full_name.asc")
+        settings = self.db.select_unfiltered("settings")
+        students = self.db.select_unfiltered("students")
+        names = {s.get("user_id"): s.get("school_name") for s in settings}
+        counts = {}
+        for s in students:
+            counts[s.get("user_id")] = counts.get(s.get("user_id"), 0) + 1
+        for p in profiles:
+            uid = p.get("id")
+            self.tree.insert("", "end", iid=uid, values=(
+                names.get(uid) or p.get("full_name") or "Unnamed school",
+                p.get("full_name") or "Principal",
+                counts.get(uid, 0),
+            ))
+
+    def open_selected(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showinfo("Admin", "Select a school first.", parent=self)
+            return
+        uid = selected[0]
+        name = self.tree.item(uid, "values")[0]
+        self.app.view_school(uid, name)
+
+
 # ---------------------------------------------------------------- main window
 class App:
-    def __init__(self):
-        self.db = SchoolDB()
-        self.root = tk.Tk()
+    def __init__(self, db=None, root=None):
+        self.db = db or SchoolDB()
+        self.root = root or tk.Tk()
+        self.want_signout = False
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
         self.root.geometry("1380x860")
         self.root.minsize(1100, 700)
@@ -1422,11 +1598,18 @@ class App:
             ("settings", "🏫  School Settings"),
             ("profile", "👤  Principal Profile"),
         ]
+        if self.db.role == "admin":
+            self.nav_items.insert(0, ("schools", "🛡️  Schools (Admin)"))
         for key, label in self.nav_items:
             btn = ttk.Button(bar, text=label, style="Sidebar.TButton",
                              command=lambda k=key: self.show(k))
             btn.pack(fill="x", padx=10, pady=1)
         tk.Frame(bar, bg=COLORS["sidebar"], height=20).pack()
+        ttk.Button(bar, text="↪  Sign out / Switch account", style="Sidebar.TButton",
+                   command=self.sign_out).pack(fill="x", padx=10, pady=1)
+        tk.Label(bar, text="Signed in as " + (self.db.email or "school account"),
+                 bg=COLORS["sidebar"], fg="#64748b",
+                 font=("Segoe UI", 8), wraplength=200).pack(fill="x", padx=18, pady=(8, 0))
         tk.Label(bar, text="School Dashboard v" + APP_VERSION, bg=COLORS["sidebar"],
                  fg="#475569", font=("Segoe UI", 8)).pack(side="bottom", pady=10)
 
@@ -1437,12 +1620,31 @@ class App:
 
     def _tick_status(self):
         state = "● Online — synced with Supabase" if not self.db.offline else "○ Offline — changes saved on this PC"
-        self.status.configure(text=state + "   |   Tip: double-click a row to edit")
+        who = f"   |   Admin view: {self.viewing_name}" if getattr(self, "viewing_name", None) else ""
+        self.status.configure(text=state + who + "   |   Tip: double-click a row to edit")
         self.root.after(2000, self._tick_status)
+
+    def sign_out(self):
+        self.want_signout = True
+        self.root.destroy()
+
+    def view_school(self, user_id, name):
+        self.db.set_viewing(user_id)
+        self.viewing_name = name
+        self.panels = {}
+        self.show("dashboard")
+
+    def exit_school_view(self):
+        self.db.exit_viewing()
+        self.viewing_name = None
+        self.panels = {}
+        self.show("schools")
 
     # ---------- panel switching ----------
     def build_panel(self, key):
         db = self.db
+        if key == "schools":
+            return AdminPanel(self.content, db, self)
         if key == "dashboard":
             return DashboardPanel(self.content, db)
         if key == "students":
@@ -1490,7 +1692,30 @@ class App:
 
 
 def main():
-    App()
+    while True:
+        session = load_session()
+        if not session:
+            root = tk.Tk()
+            root.withdraw()
+            dialog = AuthDialog(root)
+            root.wait_window(dialog)
+            if not dialog.result:
+                root.destroy()
+                return
+            session = dialog.result
+            root.destroy()
+
+        role = fetch_role(session)
+        session["role"] = role
+        save_session(session)
+
+        db = SchoolDB(session)
+        app = App(db)
+        app.root.mainloop()
+        if getattr(app, "want_signout", False):
+            clear_session()
+            continue
+        return
 
 
 if __name__ == "__main__":

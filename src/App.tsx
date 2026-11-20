@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, LogOut } from 'lucide-react'
+import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, LogOut, ShieldCheck, ArrowLeft } from 'lucide-react'
 import { DataModal, type FormValues } from './components/DataModal'
 import { SetupScreen } from './components/SetupScreen'
 import { AuthScreen } from './components/AuthScreen'
@@ -15,6 +15,7 @@ import { ModuleScreen } from './views/ModuleScreen'
 import { MessagesView } from './views/MessagesView'
 import { ProfileView } from './views/ProfileView'
 import { StudentsView } from './views/StudentsView'
+import { AdminView } from './views/AdminView'
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -27,13 +28,18 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function Dashboard({
-  controller, onConnect, onSignOut,
+  controller, onConnect, onSignOut, isAdmin, adminEmail, viewing, onViewSchool, onExitSchoolView,
 }: {
   controller: DashboardController
   onConnect: () => void
   onSignOut: () => void
+  isAdmin: boolean
+  adminEmail?: string
+  viewing: { id: string; name: string } | null
+  onViewSchool: (userId: string, name: string) => void
+  onExitSchoolView: () => void
 }) {
-  const [activeTab, setActiveTab] = useState('home')
+  const [activeTab, setActiveTab] = useState(isAdmin && !viewing ? 'admin' : 'home')
   const [moduleId, setModuleId] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
@@ -46,6 +52,11 @@ function Dashboard({
   }, [])
   const dismissToast = useCallback(() => setToast(null), [])
   const update = useAppUpdate(showToast)
+
+  useEffect(() => {
+    if (isAdmin && !viewing) setActiveTab('admin')
+    else if (activeTab === 'admin') setActiveTab('home')
+  }, [isAdmin, viewing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (controller.error) showToast(controller.error, 'error')
@@ -167,7 +178,21 @@ function Dashboard({
       {controller.loading && <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-400/80 animate-pulse z-[90]" />}
       <Toast toast={toast} onDismiss={dismissToast} />
 
-      <div className="flex-1 overflow-y-auto pb-24 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+      {isAdmin && viewing && (
+        <div className="absolute top-0 left-0 right-0 z-[60] flex items-center justify-between gap-2 bg-cyan-500/15 border-b border-cyan-500/30 px-4 py-2">
+          <div className="min-w-0 text-[10px] text-cyan-200 truncate">
+            Viewing <span className="font-bold">{viewing.name}</span>
+          </div>
+          <button onClick={onExitSchoolView} className="flex items-center gap-1 text-[10px] font-semibold text-cyan-300 shrink-0">
+            <ArrowLeft size={12} /> Schools
+          </button>
+        </div>
+      )}
+
+      <div className={`flex-1 overflow-y-auto pb-24 scrollbar-hide ${isAdmin && viewing ? 'pt-8' : ''}`} style={{ scrollbarWidth: 'none' }}>
+        {activeTab === 'admin' && isAdmin && (
+          <AdminView adminEmail={adminEmail} onOpenSchool={onViewSchool} />
+        )}
         {activeTab === 'home' && <HomeView {...viewProps} onTabChange={selectTab} />}
         {activeTab === 'students' && <StudentsView {...viewProps} />}
         {activeTab === 'academics' && <TimetableView {...viewProps} />}
@@ -182,6 +207,11 @@ function Dashboard({
 
       <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/80 pb-6 pt-3 px-6 z-50">
         <div className="flex items-center justify-between mb-2 px-1">
+          {isAdmin ? (
+            <button onClick={() => { setActiveTab('admin'); setModuleId(null) }} className="text-[10px] text-cyan-400 flex items-center gap-1 hover:text-cyan-300">
+              <ShieldCheck size={12} /> Schools
+            </button>
+          ) : <span />}
           <button onClick={onSignOut} className="text-[10px] text-slate-500 flex items-center gap-1 hover:text-slate-300">
             <LogOut size={12} /> Sign out
           </button>
@@ -256,7 +286,9 @@ function Dashboard({
 export default function App() {
   const [showSetup, setShowSetup] = useState(false)
   const [sessionReady, setSessionReady] = useState(false)
-  const [hasSession, setHasSession] = useState(false)
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
+  const [role, setRole] = useState<'school' | 'admin'>('school')
+  const [viewing, setViewing] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
     if (!isConfigured || !supabase) {
@@ -264,14 +296,36 @@ export default function App() {
       return
     }
     let mounted = true
-    supabase.auth.getSession().then(({ data }) => {
+    async function applySession(sessionUser: { id: string; email?: string } | null) {
       if (!mounted) return
-      setHasSession(Boolean(data.session))
-      setSessionReady(true)
+      setUser(sessionUser)
+      setViewing(null)
+      if (!sessionUser) {
+        setRole('school')
+        setSessionReady(true)
+        return
+      }
+      try {
+        const { data } = await supabase!
+          .from('profiles')
+          .select('role')
+          .eq('id', sessionUser.id)
+          .maybeSingle()
+        if (mounted) setRole((data as { role?: 'school' | 'admin' } | null)?.role === 'admin' ? 'admin' : 'school')
+      } catch {
+        if (mounted) setRole('school')
+      } finally {
+        if (mounted) setSessionReady(true)
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data.session?.user
+      void applySession(u ? { id: u.id, email: u.email } : null)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setHasSession(Boolean(session))
-      setSessionReady(true)
+      const u = session?.user
+      void applySession(u ? { id: u.id, email: u.email } : null)
     })
     return () => {
       mounted = false
@@ -280,11 +334,14 @@ export default function App() {
   }, [])
 
   async function handleSignOut() {
+    controller.forgetLocal()
+    if (viewing) controller.forgetLocal(viewing.id)
     if (!supabase) return
     await supabase.auth.signOut()
   }
 
-  const controller = useDashboardData(hasSession)
+  const ownerId = viewing?.id ?? user?.id ?? null
+  const controller = useDashboardData(Boolean(user), ownerId, role === 'admin')
 
   if (!isConfigured) {
     return (
@@ -300,7 +357,7 @@ export default function App() {
       </Shell>
     )
   }
-  if (!hasSession) {
+  if (!user) {
     return (
       <Shell>
         {showSetup ? <SetupScreen onCancel={() => setShowSetup(false)} /> : <AuthScreen onShowSetup={() => setShowSetup(true)} />}
@@ -313,7 +370,16 @@ export default function App() {
       {showSetup ? (
         <SetupScreen onCancel={() => setShowSetup(false)} />
       ) : (
-        <Dashboard controller={controller} onConnect={() => setShowSetup(true)} onSignOut={handleSignOut} />
+        <Dashboard
+          controller={controller}
+          onConnect={() => setShowSetup(true)}
+          onSignOut={handleSignOut}
+          isAdmin={role === 'admin'}
+          adminEmail={user.email}
+          viewing={viewing}
+          onViewSchool={(id, name) => { controller.forgetLocal(id); setViewing({ id, name }) }}
+          onExitSchoolView={() => setViewing(null)}
+        />
       )}
     </Shell>
   )

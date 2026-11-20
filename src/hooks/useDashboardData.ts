@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isConfigured, supabase } from '../lib/supabase'
-import { loadLocal, saveLocal } from '../lib/localData'
-import type { DashboardData } from '../lib/types'
+import { clearLocal, loadLocal, saveLocal } from '../lib/localData'
+import { emptyData, type DashboardData } from '../lib/types'
 
 export type TableName = 'students' | 'schedule_items' | 'messages' | 'events'
 export type ModuleTable =
@@ -33,17 +33,15 @@ const MODULE_TABLE_TO_KEY: Record<ModuleTable, ModuleListKey> = {
 
 /** Natural keys so repeated saves update instead of failing on unique indexes. */
 const ON_CONFLICT: Partial<Record<TableName | ModuleTable, string>> = {
-  schedule_items: 'class_id,period_no',
+  schedule_items: 'user_id,class_id,period_no',
+  classes: 'user_id,grade,section',
   exam_marks: 'session,term,student_id,subject',
   fees: 'student_id,month_year',
   transport_passengers: 'route_id,student_id',
   hostel_assignments: 'room_id,student_id',
 }
 
-const SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
-
 function errorMessage(error: unknown): string {
-  // Supabase/PostgREST errors are plain objects, not Error instances, so inspect their fields.
   let raw = ''
   let code = ''
   if (error instanceof Error) {
@@ -58,16 +56,16 @@ function errorMessage(error: unknown): string {
 
   const text = `${code} ${raw}`.toLowerCase()
   if (text.includes('pgrst205') || text.includes('could not find the table') || text.includes('42p01')) {
-    return 'Supabase tables are missing — run schema-noauth.sql and schema-modules.sql in SQL Editor, then reopen the app. Saving on device for now.'
+    return 'Supabase tables are missing — run supabase/schema-auth-multi.sql in SQL Editor, then reopen the app.'
   }
   if (text.includes('pgrst301') || text.includes('row level security') || text.includes('permission denied') || text.includes('42501')) {
-    return 'Supabase permissions are blocking access. Re-run the schema SQL in the SQL Editor. Data is saved on this device for now.'
+    return 'Supabase permissions are blocking access. Re-run the auth schema SQL in the SQL Editor.'
   }
   if (text.includes('failed to fetch') || text.includes('network') || text.includes('timeout') || text.includes('offline')) {
-    return 'Cannot reach Supabase right now. Data is saved on this device and will sync when you are online.'
+    return 'Cannot reach Supabase right now. Changes are kept on this device for this account only.'
   }
-  if (!raw) return 'Could not reach Supabase. Data was saved on this device instead.'
-  return `${raw} (saved on device instead)`
+  if (!raw) return 'Could not reach Supabase. Changes were kept on this device only.'
+  return raw
 }
 
 function upsertRow(list: Array<Record<string, any>>, row: Record<string, unknown>) {
@@ -79,8 +77,13 @@ function upsertRow(list: Array<Record<string, any>>, row: Record<string, unknown
     : [...list, record]
 }
 
-export function useDashboardData(enabled = true) {
-  const [data, setData] = useState<DashboardData>(() => loadLocal())
+/**
+ * ownerId is the account whose school data is being viewed/edited.
+ * A normal user always passes their own auth uid. An admin passes the uid of
+ * the school they selected in the Schools screen.
+ */
+export function useDashboardData(enabled = true, ownerId: string | null = null, isAdmin = false) {
+  const [data, setData] = useState<DashboardData>(() => ({ ...emptyData }))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [remoteOk, setRemoteOk] = useState(false)
@@ -88,34 +91,33 @@ export function useDashboardData(enabled = true) {
   dataRef.current = data
 
   const refresh = useCallback(async (): Promise<boolean> => {
-    if (!enabled || !isConfigured || !supabase) {
-      setData(loadLocal())
+    if (!enabled || !ownerId || !isConfigured || !supabase) {
+      setData({ ...emptyData })
       setRemoteOk(false)
       return false
     }
     setLoading(true)
     try {
-      const [userRes] = await Promise.all([supabase.auth.getUser()])
-      const uid = userRes?.data?.user?.id
+      const db = supabase!
       const [students, schedule, messages, events, profile, settings,
         classes, staff, attendance, examMarks, fees, books,
         routes, transportPassengers, hostelRooms, hostelAssignments] = await Promise.all([
-        supabase.from('students').select('*').order('created_at', { ascending: true }),
-        supabase.from('schedule_items').select('*').order('created_at', { ascending: true }),
-        supabase.from('messages').select('*').order('created_at', { ascending: true }),
-        supabase.from('events').select('*').order('created_at', { ascending: true }),
-        uid ? supabase.from('profiles').select('*').eq('id', uid).maybeSingle() : Promise.resolve({ data: null, error: null }),
-        uid ? supabase.from('settings').select('*').eq('user_id', uid).maybeSingle() : Promise.resolve({ data: null, error: null }),
-        supabase.from('classes').select('*').order('grade', { ascending: true }),
-        supabase.from('staff').select('*').order('created_at', { ascending: true }),
-        supabase.from('attendance').select('*'),
-        supabase.from('exam_marks').select('*').order('created_at', { ascending: true }),
-        supabase.from('fees').select('*').order('payment_date', { ascending: false }),
-        supabase.from('library_books').select('*').order('created_at', { ascending: true }),
-        supabase.from('transport_routes').select('*').order('created_at', { ascending: true }),
-        supabase.from('transport_passengers').select('*'),
-        supabase.from('hostel_rooms').select('*').order('room_no', { ascending: true }),
-        supabase.from('hostel_assignments').select('*'),
+        db.from('students').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('schedule_items').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('messages').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('events').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('profiles').select('*').eq('id', ownerId).maybeSingle(),
+        db.from('settings').select('*').eq('user_id', ownerId).maybeSingle(),
+        db.from('classes').select('*').eq('user_id', ownerId).order('grade', { ascending: true }),
+        db.from('staff').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('attendance').select('*').eq('user_id', ownerId),
+        db.from('exam_marks').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('fees').select('*').eq('user_id', ownerId).order('payment_date', { ascending: false }),
+        db.from('library_books').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('transport_routes').select('*').eq('user_id', ownerId).order('created_at', { ascending: true }),
+        db.from('transport_passengers').select('*').eq('user_id', ownerId),
+        db.from('hostel_rooms').select('*').eq('user_id', ownerId).order('room_no', { ascending: true }),
+        db.from('hostel_assignments').select('*').eq('user_id', ownerId),
       ])
       const failed = [
         students, schedule, messages, events, profile, settings,
@@ -142,19 +144,19 @@ export function useDashboardData(enabled = true) {
         hostelAssignments: (hostelAssignments.data ?? []) as DashboardData['hostelAssignments'],
       }
       setData(next)
-      saveLocal(next)
+      saveLocal(next, ownerId)
       setRemoteOk(true)
       setError(null)
       return true
     } catch (e) {
-      setData(loadLocal())
+      setData(loadLocal(ownerId))
       setRemoteOk(false)
       setError(errorMessage(e))
       return false
     } finally {
       setLoading(false)
     }
-  }, [enabled])
+  }, [enabled, ownerId, isAdmin])
 
   useEffect(() => {
     void refresh()
@@ -163,11 +165,11 @@ export function useDashboardData(enabled = true) {
   function commitLocal(next: DashboardData) {
     dataRef.current = next
     setData(next)
-    saveLocal(next)
+    if (ownerId) saveLocal(next, ownerId)
   }
 
   async function tryRemote(write: () => Promise<void>): Promise<boolean> {
-    if (!isConfigured || !supabase || !remoteOk) return false
+    if (!isConfigured || !supabase || !remoteOk || !ownerId) return false
     try {
       await write()
       await refresh()
@@ -179,17 +181,16 @@ export function useDashboardData(enabled = true) {
     }
   }
 
+  /** Stamp every row with the account that owns this school. */
+  function owned<T extends Record<string, unknown>>(row: T): T {
+    return ownerId ? ({ ...row, user_id: ownerId } as T) : row
+  }
+
   async function saveRecord(table: TableName, row: Record<string, unknown>): Promise<void> {
     const didRemote = await tryRemote(async () => {
-      const payload = { ...row }
+      const payload = owned({ ...row })
       if (!payload.id) delete payload.id
       delete payload.created_at
-      // Add user_id for auth-based tables
-      if (supabase && ['students','messages','events','schedule_items'].includes(table)) {
-        const { data: userData } = await supabase.auth.getUser()
-        const uid = userData?.user?.id
-        if (uid) (payload as any).user_id = uid
-      }
       const { error: e } = await supabase!.from(table).upsert(payload, {
         onConflict: ON_CONFLICT[table],
       })
@@ -200,7 +201,7 @@ export function useDashboardData(enabled = true) {
     const key = TABLE_TO_KEY[table]
     const current = dataRef.current
     const list = current[key] as unknown as Array<Record<string, unknown>>
-    commitLocal({ ...current, [key]: upsertRow(list, row) } as unknown as DashboardData)
+    commitLocal({ ...current, [key]: upsertRow(list, owned(row)) } as unknown as DashboardData)
   }
 
   /** Delete a row plus every local child row that would otherwise dangle. */
@@ -225,15 +226,16 @@ export function useDashboardData(enabled = true) {
   async function deleteRecord(table: TableName, id: string): Promise<void> {
     const didRemote = await tryRemote(async () => {
       if (table === 'students') {
-        // attendance has no foreign key, so remove its rows explicitly.
+        // attendance has no FK cascade, so remove its rows explicitly.
         const { error: attendanceError } = await supabase!
           .from('attendance')
           .delete()
           .eq('record_id', id)
           .eq('entity_type', 'students')
+          .eq('user_id', ownerId)
         if (attendanceError) throw attendanceError
       }
-      const { error: e } = await supabase!.from(table).delete().eq('id', id)
+      const { error: e } = await supabase!.from(table).delete().eq('id', id).eq('user_id', ownerId)
       if (e) throw e
     })
     if (didRemote) return
@@ -270,7 +272,7 @@ export function useDashboardData(enabled = true) {
 
   async function saveModule(table: ModuleTable, row: Record<string, unknown>): Promise<void> {
     const didRemote = await tryRemote(async () => {
-      const payload = { ...row }
+      const payload = owned({ ...row })
       if (!payload.id) delete payload.id
       delete payload.created_at
       const { error: e } = await supabase!.from(table).upsert(payload, {
@@ -283,33 +285,29 @@ export function useDashboardData(enabled = true) {
     const key = MODULE_TABLE_TO_KEY[table]
     const current = dataRef.current
     const list = current[key] as unknown as Array<Record<string, unknown>>
-    commitLocal({ ...current, [key]: upsertRow(list, row) } as unknown as DashboardData)
+    commitLocal({ ...current, [key]: upsertRow(list, owned(row)) } as unknown as DashboardData)
   }
 
   async function deleteModule(table: ModuleTable, id: string): Promise<void> {
     const didRemote = await tryRemote(async () => {
-      const { error: e } = await supabase!.from(table).delete().eq('id', id)
+      const { error: e } = await supabase!.from(table).delete().eq('id', id).eq('user_id', ownerId)
       if (e) throw e
     })
     if (didRemote) return
     commitLocal(removeModuleLocally(dataRef.current, table, id))
   }
 
-  /**
-   * Batch upserts + deletes for screens that edit several related rows at once
-   * (e.g. a full result card) so the app refreshes once instead of per subject.
-   */
   async function applyModuleChanges(
     upserts: Array<{ table: ModuleTable; row: Record<string, unknown> }>,
     deletes: Array<{ table: ModuleTable; id: string }> = [],
   ): Promise<void> {
     const didRemote = await tryRemote(async () => {
       for (const change of deletes) {
-        const { error: e } = await supabase!.from(change.table).delete().eq('id', change.id)
+        const { error: e } = await supabase!.from(change.table).delete().eq('id', change.id).eq('user_id', ownerId)
         if (e) throw e
       }
       for (const change of upserts) {
-        const payload = { ...change.row }
+        const payload = owned({ ...change.row })
         if (!payload.id) delete payload.id
         delete payload.created_at
         const { error: e } = await supabase!.from(change.table).upsert(payload, {
@@ -325,7 +323,7 @@ export function useDashboardData(enabled = true) {
     for (const change of upserts) {
       const key = MODULE_TABLE_TO_KEY[change.table]
       const list = current[key] as unknown as Array<Record<string, unknown>>
-      current = { ...current, [key]: upsertRow(list, change.row) } as unknown as DashboardData
+      current = { ...current, [key]: upsertRow(list, owned(change.row)) } as unknown as DashboardData
     }
     commitLocal(current)
   }
@@ -334,7 +332,7 @@ export function useDashboardData(enabled = true) {
     const didRemote = await tryRemote(async () => {
       const { error: e } = await supabase!
         .from('attendance')
-        .upsert({ date_str, entity_type, record_id, status }, { onConflict: 'date_str,entity_type,record_id' })
+        .upsert(owned({ date_str, entity_type, record_id, status }), { onConflict: 'date_str,entity_type,record_id' })
       if (e) throw e
     })
     if (didRemote) return
@@ -345,34 +343,32 @@ export function useDashboardData(enabled = true) {
       r.date_str === date_str && r.entity_type === entity_type && r.record_id === record_id
     const next = attendance.some(matches)
       ? attendance.map((r) => (matches(r) ? { ...r, status } : r))
-      : [...attendance, { date_str, entity_type, record_id, status }]
+      : [...attendance, owned({ date_str, entity_type, record_id, status })]
     commitLocal({ ...current, attendance: next })
   }
 
   async function saveProfile(row: {
     full_name: string; role_title: string; avatar_url: string | null
   }): Promise<void> {
+    if (!ownerId) return
     const didRemote = await tryRemote(async () => {
-      const { data: userData } = await supabase!.auth.getUser()
-      const uid = userData?.user?.id ?? SINGLETON_ID
       const { error: e } = await supabase!.from('profiles').upsert({
-        id: uid, ...row, updated_at: new Date().toISOString(),
+        id: ownerId, ...row, updated_at: new Date().toISOString(),
       })
       if (e) throw e
     })
     if (didRemote) return
     commitLocal({
       ...dataRef.current,
-      profile: { id: 'local-profile', ...row, updated_at: new Date().toISOString() },
+      profile: { id: ownerId, ...row, updated_at: new Date().toISOString() },
     })
   }
 
   async function saveSettings(row: { school_name: string | null }): Promise<void> {
+    if (!ownerId) return
     const didRemote = await tryRemote(async () => {
-      const { data: userData } = await supabase!.auth.getUser()
-      const uid = userData?.user?.id ?? SINGLETON_ID
       const { error: e } = await supabase!.from('settings').upsert({
-        user_id: uid, ...row, updated_at: new Date().toISOString(),
+        user_id: ownerId, ...row, updated_at: new Date().toISOString(),
       })
       if (e) throw e
     })
@@ -380,12 +376,12 @@ export function useDashboardData(enabled = true) {
     commitLocal({
       ...dataRef.current,
       settings: {
-        id: 'local-settings',
+        user_id: ownerId,
         total_teachers: dataRef.current.settings?.total_teachers ?? null,
         pending_fees: dataRef.current.settings?.pending_fees ?? null,
         ...row,
         updated_at: new Date().toISOString(),
-      },
+      } as DashboardData['settings'],
     })
   }
 
@@ -397,10 +393,14 @@ export function useDashboardData(enabled = true) {
     return ok
   }
 
+  function forgetLocal(targetId: string | null = ownerId) {
+    clearLocal(targetId)
+  }
+
   return {
     isRemote: isConfigured && remoteOk,
     usingLocal: !isConfigured || !remoteOk,
-    loading, error, data, refresh, retryConnection,
+    loading, error, data, refresh, retryConnection, forgetLocal,
     saveRecord, deleteRecord, saveModule, deleteModule, applyModuleChanges, setAttendance,
     saveProfile, saveSettings,
   }

@@ -124,6 +124,12 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
             {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
 
+          {mode === 'login' && (
+            <p className="text-[10px] text-slate-600 text-center leading-relaxed">
+              Administrator account: admin@school.com
+            </p>
+          )}
+
           {onShowSetup && (
             <button
               onClick={onShowSetup}
