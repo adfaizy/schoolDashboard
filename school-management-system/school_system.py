@@ -55,21 +55,21 @@ _DARK = _system_dark_mode()
 # Always use the sharp light palette; the OS theme only changes the sidebar shade.
 if _DARK:
     COLORS = {
-        "sidebar": "#e2e8f0",
-        "sidebar_hi": "#cbd5e1",
-        "accent": "#155eef",
-        "bg": "#f1f3f7",
+        "sidebar": "#dbe3ef",
+        "sidebar_hi": "#aab8ca",
+        "accent": "#0b5cff",
+        "bg": "#eef2f8",
         "card": "#ffffff",
-        "text": "#0f172a",
+        "text": "#020617",
     }
 else:
     COLORS = {
-        "sidebar": "#f1f3f7",
-        "sidebar_hi": "#e2e8f0",
-        "accent": "#155eef",
-        "bg": "#f1f3f7",
+        "sidebar": "#eef2f8",
+        "sidebar_hi": "#dbe3ef",
+        "accent": "#0b5cff",
+        "bg": "#eef2f8",
         "card": "#ffffff",
-        "text": "#0f172a",
+        "text": "#020617",
     }
 
 
@@ -287,18 +287,18 @@ class DashboardPanel(ttk.Frame):
 
         self.cards = ttk.Frame(self, padding=(12, 12, 12, 4))
         self.cards.pack(fill="x")
-        self.report = tk.Text(self, height=18, width=10, wrap="word", background="#e2e8f0",
-                              foreground="#0f172a", font=("Consolas", 10), relief="flat")
+        self.report = tk.Text(self, height=18, width=10, wrap="word", background="#dbe3ef",
+                              foreground="#020617", font=("Consolas", 10), relief="flat")
         self.report.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         self.refresh()
 
     def stat_card(self, parent, label, value, col):
         frame = tk.Frame(parent, bg=COLORS["card"], padx=18, pady=14, highlightthickness=1,
-                         highlightbackground="#cbd5e1")
+                         highlightbackground="#aab8ca")
         frame.grid(row=0, column=col, padx=6, pady=4, sticky="nsew")
         tk.Label(frame, text=value, bg=COLORS["card"], font=("Segoe UI", 22, "bold"),
-                 fg="#0f172a").pack()
-        tk.Label(frame, text=label, bg=COLORS["card"], font=("Segoe UI", 9), fg="#155eef").pack()
+                 fg="#020617").pack()
+        tk.Label(frame, text=label, bg=COLORS["card"], font=("Segoe UI", 9), fg="#0b5cff").pack()
 
     def refresh(self):
         for w in self.cards.winfo_children():
@@ -781,7 +781,7 @@ class ClassPlannerPanel(ttk.Frame):
         head.pack(fill="x")
         ttk.Label(head, text="Class Planner", font=("Segoe UI", 15, "bold")).pack(side="left")
         ttk.Label(head, text="  tap any cell to assign a subject and teacher",
-                  foreground="#155eef").pack(side="left")
+                  foreground="#0b5cff").pack(side="left")
         ttk.Button(head, text="Refresh", command=self.render).pack(side="right")
 
         canvas = tk.Canvas(self, highlightthickness=0, background=COLORS["bg"])
@@ -816,7 +816,7 @@ class ClassPlannerPanel(ttk.Frame):
                       padding=16).grid(row=0, column=0, sticky="w")
             return
 
-        header_bg = "#155eef"
+        header_bg = "#0b5cff"
         tk.Label(self.inner, text="Class", bg=header_bg, fg="#ffffff", width=14, pady=6,
                  font=("Segoe UI", 9, "bold"), anchor="w").grid(row=0, column=0, padx=1, pady=1, sticky="nsew")
         column = 1
@@ -835,7 +835,7 @@ class ClassPlannerPanel(ttk.Frame):
                 column += 1
 
         for index, klass in enumerate(classes, start=1):
-            tk.Label(self.inner, text=class_label(klass), bg="#e2e8f0", fg="#0f172a", width=14,
+            tk.Label(self.inner, text=class_label(klass), bg="#dbe3ef", fg="#020617", width=14,
                      anchor="w", padx=8, pady=8, font=("Segoe UI", 10, "bold")).grid(
                 row=index, column=0, padx=1, pady=1, sticky="nsew")
             column = 1
@@ -846,7 +846,7 @@ class ClassPlannerPanel(ttk.Frame):
                 text = f"{subject}\n{teacher}" if subject else "+"
                 button = tk.Button(
                     self.inner, text=text, width=14, height=3, relief="flat", bd=0,
-                    bg="#ffffff", fg="#1247c7" if subject else "#64748b",
+                    bg="#ffffff", fg="#0047d1" if subject else "#475569",
                     activebackground="#e0f2fe", font=("Segoe UI", 8),
                     wraplength=110, justify="center",
                     command=lambda k=klass, p=number: self.assign(k, p),
@@ -1109,7 +1109,7 @@ class ExamsPanel(ttk.Frame):
         ttk.Button(row, text="Delete selected mark", command=self.delete_mark).pack(side="left")
         ttk.Button(row, text="Generate result card (selected student)", command=self.result_card).pack(side="left", padx=8)
 
-        self.card = tk.Text(self, height=10, wrap="word", background="#e2e8f0", foreground="#0f172a",
+        self.card = tk.Text(self, height=10, wrap="word", background="#dbe3ef", foreground="#020617",
                             font=("Consolas", 10), relief="flat")
         self.card.pack(fill="both", expand=False, padx=12, pady=(0, 12))
         self.refresh()
@@ -1598,7 +1598,7 @@ class AuthDialog(tk.Toplevel):
         self.mode = "login"
 
         card = tk.Frame(self, bg=COLORS["card"], padx=24, pady=24,
-                        highlightthickness=1, highlightbackground="#155eef")
+                        highlightthickness=1, highlightbackground="#0b5cff")
         card.pack(fill="both", expand=True, padx=18, pady=18)
 
         self.icon = tk.Label(card, text="🏫", font=("Segoe UI", 30), bg=COLORS["card"], fg=COLORS["accent"])
@@ -1607,7 +1607,7 @@ class AuthDialog(tk.Toplevel):
                                 bg=COLORS["card"], fg=COLORS["text"])
         self.heading.pack(pady=(8, 2))
         self.sub = tk.Label(card, text="Each account has its own students, staff and records.",
-                            font=("Segoe UI", 9), bg=COLORS["card"], fg="#155eef")
+                            font=("Segoe UI", 9), bg=COLORS["card"], fg="#0b5cff")
         self.sub.pack(pady=(0, 18))
 
         self.name_var = tk.StringVar()
@@ -1616,17 +1616,17 @@ class AuthDialog(tk.Toplevel):
         self.error_var = tk.StringVar()
 
         self.name_row = tk.Frame(card, bg=COLORS["card"])
-        tk.Label(self.name_row, text="Principal name", bg=COLORS["card"], fg="#64748b",
+        tk.Label(self.name_row, text="Principal name", bg=COLORS["card"], fg="#475569",
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
         tk.Entry(self.name_row, textvariable=self.name_var, font=("Segoe UI", 11),
-                 bg="#f1f3f7", fg="#0f172a", insertbackground="#155eef", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
+                 bg="#eef2f8", fg="#020617", insertbackground="#0b5cff", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
 
         for label, var, show in (("Email", self.email_var, None), ("Password", self.pass_var, "*")):
             row = tk.Frame(card, bg=COLORS["card"])
-            tk.Label(row, text=label, bg=COLORS["card"], fg="#155eef",
+            tk.Label(row, text=label, bg=COLORS["card"], fg="#0b5cff",
                      font=("Segoe UI", 9, "bold")).pack(anchor="w")
             entry = tk.Entry(row, textvariable=var, show=show or "", font=("Segoe UI", 11),
-                             bg="#f1f3f7", fg="#0f172a", insertbackground="#155eef", relief="flat")
+                             bg="#eef2f8", fg="#020617", insertbackground="#0b5cff", relief="flat")
             entry.pack(fill="x", pady=(4, 10), ipady=7)
             if label == "Password":
                 self.pass_entry = entry
@@ -1705,13 +1705,13 @@ class AdminPanel(tk.Frame):
                  bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
         tk.Label(head,
                  text="Schools sign up themselves. You can open, reset or delete any account.",
-                 font=("Segoe UI", 10), bg=COLORS["bg"], fg="#155eef").pack(anchor="w", pady=(3, 0))
-        self.note = tk.Label(head, text="", font=("Segoe UI", 8), bg=COLORS["bg"], fg="#155eef",
+                 font=("Segoe UI", 10), bg=COLORS["bg"], fg="#0b5cff").pack(anchor="w", pady=(3, 0))
+        self.note = tk.Label(head, text="", font=("Segoe UI", 8), bg=COLORS["bg"], fg="#0b5cff",
                              wraplength=900, justify="left")
         self.note.pack(anchor="w", pady=(4, 0))
 
         table_frame = tk.Frame(self, bg=COLORS["card"], padx=10, pady=10,
-                               highlightthickness=1, highlightbackground="#f1f3f7")
+                               highlightthickness=1, highlightbackground="#eef2f8")
         table_frame.pack(fill="both", expand=True, padx=20, pady=8)
 
         cols = ("school", "email", "principal", "students")
@@ -1841,12 +1841,12 @@ class App:
             pass
         style = ttk.Style()
         style.configure("TButton", font=("Segoe UI", 10), padding=(10, 4))
-        style.configure("Sidebar.TButton", background=COLORS["sidebar"], foreground="#0f172a",
+        style.configure("Sidebar.TButton", background=COLORS["sidebar"], foreground="#020617",
                         borderwidth=0, focusthickness=0, anchor="w", padding=(16, 10),
                         font=("Segoe UI", 10))
         style.map("Sidebar.TButton",
                   background=[("active", COLORS["sidebar_hi"]), ("pressed", COLORS["accent"])],
-                  foreground=[("active", "#155eef"), ("pressed", "#ffffff")])
+                  foreground=[("active", "#0b5cff"), ("pressed", "#ffffff")])
         style.configure("Logout.TButton", background="#dc2626", foreground="#ffffff",
                         borderwidth=0, focusthickness=0, anchor="w", padding=(16, 12),
                         font=("Segoe UI", 10, "bold"))
@@ -1873,7 +1873,7 @@ class App:
         bar.pack_propagate(False)
         tk.Label(bar, text="SCHOOL\nMANAGEMENT", bg=COLORS["sidebar"], fg=COLORS["accent"],
                  font=("Segoe UI", 15, "bold"), justify="left").pack(fill="x", padx=18, pady=(18, 4))
-        tk.Label(bar, text="SYSTEM", bg=COLORS["sidebar"], fg="#155eef",
+        tk.Label(bar, text="SYSTEM", bg=COLORS["sidebar"], fg="#0b5cff",
                  font=("Segoe UI", 9, "bold")).pack(fill="x", padx=18, pady=(0, 12))
         self.nav_items = [
             ("dashboard", "🏠  Dashboard & Reports"),
@@ -1904,13 +1904,13 @@ class App:
         ttk.Button(bar, text="↪  LOGOUT / Switch account", style="Logout.TButton",
                    command=self.sign_out).pack(fill="x", padx=10, pady=4)
         tk.Label(bar, text="Signed in as " + (self.db.email or "school account"),
-                 bg=COLORS["sidebar"], fg="#155eef",
+                 bg=COLORS["sidebar"], fg="#0b5cff",
                  font=("Segoe UI", 8), wraplength=200).pack(fill="x", padx=18, pady=(8, 0))
         tk.Label(bar, text="School Dashboard v" + APP_VERSION, bg=COLORS["sidebar"],
                  fg="#475569", font=("Segoe UI", 8)).pack(side="bottom", pady=10)
 
     def _build_statusbar(self):
-        self.status = tk.Label(self.root, text="", background="#f1f3f7", foreground="#155eef",
+        self.status = tk.Label(self.root, text="", background="#eef2f8", foreground="#0b5cff",
                                anchor="w", padx=12, font=("Segoe UI", 9))
         self.status.pack(side="bottom", fill="x")
 

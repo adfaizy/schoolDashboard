@@ -27,7 +27,7 @@ class PhoneDialer:
                 dark = False
         else:
             dark = False
-        _bg = "#f1f3f7"
+        _bg = "#eef2f8"
         if self._standalone:
             self.window.configure(bg=_bg)
         else:
@@ -54,19 +54,19 @@ class PhoneDialer:
         else:
             dark = False
         # Sharp shadcn-style light palette on every OS theme.
-        self.bg = "#f1f3f7"
+        self.bg = "#eef2f8"
         self.card = "#ffffff"
-        self.display_bg = "#e2e8f0"
-        self.text = "#0f172a"
+        self.display_bg = "#dbe3ef"
+        self.text = "#020617"
         self.muted = "#475569"
-        self.digit_bg = "#155eef"
-        self.digit_hover = "#1247c7"
-        self.special_bg = "#7c3aed"
-        self.special_hover = "#6d28d9"
+        self.digit_bg = "#0b5cff"
+        self.digit_hover = "#0047d1"
+        self.special_bg = "#8b5cf6"
+        self.special_hover = "#7c3aed"
         self.call_bg = "#16a34a"
         self.call_hover = "#22c55e"
-        self.end_bg = "#dc2626"
-        self.end_hover = "#b91c1c"
+        self.end_bg = "#e11d48"
+        self.end_hover = "#be123c"
         self.utility_bg = "#334155"
         self.utility_hover = "#475569"
 

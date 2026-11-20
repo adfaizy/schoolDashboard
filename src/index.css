@@ -4,13 +4,13 @@
 
 :root {
   color-scheme: light;
-  --page: #f1f3f7;
+  --page: #eef2f8;
   --card: #ffffff;
-  --border: #cbd5e1;
-  --text: #0f172a;
+  --border: #aab8ca;
+  --text: #020617;
   --muted: #475569;
-  --primary: #155eef;
-  --primary-hover: #1247c7;
+  --primary: #0b5cff;
+  --primary-hover: #0047d1;
 }
 
 html,
@@ -34,7 +34,7 @@ body {
 }
 
 .bg-black\/70 {
-  background-color: rgba(15, 23, 42, 0.14) !important;
+  background-color: rgba(2, 6, 23, 0.18) !important;
 }
 
 .scrollbar-hide::-webkit-scrollbar {

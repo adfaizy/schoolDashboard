@@ -53,7 +53,7 @@ export function DataModal({
   }
 
   return (
-    <div className="absolute inset-0 z-[70] flex bg-[#cbd5e1]/80 backdrop-blur-sm fade-in-up">
+    <div className="absolute inset-0 z-[70] flex bg-[#94a3b8]/70 backdrop-blur-sm fade-in-up">
       <div className="w-full h-full overflow-y-auto scrollbar-hide bg-slate-900 p-6 pt-12 pb-8 shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-slate-100">{title}</h3>

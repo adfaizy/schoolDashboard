@@ -103,7 +103,7 @@ export function TransferDialog({ title, description, options, value, onChange, o
   subjectLabel?: string
 }) {
   return (
-    <div className="absolute inset-0 z-[76] flex items-center justify-center bg-[#cbd5e1]/80 backdrop-blur-sm p-6 fade-in-up">
+    <div className="absolute inset-0 z-[76] flex items-center justify-center bg-[#94a3b8]/70 backdrop-blur-sm p-6 fade-in-up">
       <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-5">
         <div className="flex items-start justify-between gap-3">
           <div>

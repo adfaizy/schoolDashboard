@@ -43,7 +43,7 @@ function periodKey(item: { period_no?: number | null; time?: string | null }): s
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#f1f3f7] flex items-center justify-center sm:p-6 font-sans selection:bg-cyan-500/30">
+    <div className="min-h-screen bg-[#eef2f8] flex items-center justify-center sm:p-6 font-sans selection:bg-cyan-500/30">
       <div className="w-full h-screen sm:h-[850px] max-w-[400px] bg-slate-950 relative overflow-hidden sm:rounded-[2.5rem] sm:border-[8px] border-slate-800 shadow-2xl flex flex-col">
         {children}
       </div>
@@ -447,7 +447,7 @@ function Dashboard({
       )}
 
       {deleteTarget && (
-        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm p-6 fade-in-up">
+        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#94a3b8]/70 backdrop-blur-sm p-6 fade-in-up">
           <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
             <h3 className="text-base font-bold text-slate-100">Delete this record?</h3>
             <p className="text-xs text-slate-400 mt-2">

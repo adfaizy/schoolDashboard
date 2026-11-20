@@ -9,7 +9,7 @@ function InlineConfirm({ label, onConfirm, onCancel, busy }: {
   label: string; onConfirm: () => void; onCancel: () => void; busy?: boolean
 }) {
   return (
-    <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#cbd5e1]/80 backdrop-blur-sm p-6 fade-in-up">
+    <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#94a3b8]/70 backdrop-blur-sm p-6 fade-in-up">
       <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
         <h3 className="text-base font-bold text-slate-100">Delete this record?</h3>
         <p className="text-xs text-slate-400 mt-2"><span className="font-semibold text-slate-300">{label}</span> will be removed.</p>

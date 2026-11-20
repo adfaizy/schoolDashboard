@@ -299,7 +299,7 @@ export function ClassesView({ controller, onNotify, onTransfer, onBack }: ViewPr
       </div>
 
       {draft && (
-        <div className="absolute inset-0 z-[72] flex bg-[#cbd5e1]/80 backdrop-blur-sm fade-in-up">
+        <div className="absolute inset-0 z-[72] flex bg-[#94a3b8]/70 backdrop-blur-sm fade-in-up">
           <div className="w-full h-full overflow-y-auto scrollbar-hide bg-slate-900 p-6 pt-12 pb-8 shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-slate-100">{draft.id ? 'Edit Class' : 'New Class'}</h3>
@@ -420,7 +420,7 @@ export function ClassesView({ controller, onNotify, onTransfer, onBack }: ViewPr
       )}
 
       {deleting && (
-        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#cbd5e1]/80 backdrop-blur-sm p-6 fade-in-up">
+        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#94a3b8]/70 backdrop-blur-sm p-6 fade-in-up">
           <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
             <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto mb-3">
               <AlertTriangle size={20} />
