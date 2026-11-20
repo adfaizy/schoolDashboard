@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, LogOut, ShieldCheck, ArrowLeft } from 'lucide-react'
+import { BookOpen, Grid3X3, Home, MessageSquare, User, Users, ShieldCheck, ArrowLeft } from 'lucide-react'
 import { DataModal, type FormValues } from './components/DataModal'
 import { SetupScreen } from './components/SetupScreen'
 import { AuthScreen } from './components/AuthScreen'
@@ -401,19 +401,13 @@ function Dashboard({
       </div>
 
       <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-800/80 pb-6 pt-3 px-6 z-50">
-        <div className="flex items-center gap-2 mb-2 px-1">
-          {isAdmin ? (
-            <button onClick={() => { setActiveTab('admin'); setModuleId(null) }} className="shrink-0 px-2.5 py-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-[10px] font-bold text-cyan-300 flex items-center gap-1 hover:bg-cyan-500/20">
+        {isAdmin && (
+          <div className="mb-2 px-1">
+            <button onClick={() => { setActiveTab('admin'); setModuleId(null) }} className="px-2.5 py-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-[10px] font-bold text-cyan-300 flex items-center gap-1 hover:bg-cyan-500/20">
               <ShieldCheck size={13} /> Schools
             </button>
-          ) : <span className="text-[10px] font-semibold text-slate-500 pr-1">Signed in</span>}
-          <button
-            onClick={onSignOut}
-            className="flex-1 py-2 rounded-xl border border-rose-500/40 bg-rose-500/10 text-[11px] font-bold text-rose-300 flex items-center justify-center gap-1.5 hover:bg-rose-500/20 active:scale-95 transition-all"
-          >
-            <LogOut size={14} /> Logout
-          </button>
-        </div>
+          </div>
+        )}
         <ul className="flex justify-between items-center">
           {[
             { id: 'home', icon: <Home size={22} />, label: 'Home' },

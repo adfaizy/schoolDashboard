@@ -299,8 +299,8 @@ export function ClassesView({ controller, onNotify, onTransfer, onBack }: ViewPr
       </div>
 
       {draft && (
-        <div className="absolute inset-0 z-[72] flex items-end bg-[#cbd5e1]/80 backdrop-blur-sm fade-in-up">
-          <div className="w-full max-h-[90%] overflow-y-auto scrollbar-hide bg-slate-900 border-t border-slate-700 rounded-t-3xl p-6 pb-8">
+        <div className="absolute inset-0 z-[72] flex bg-[#cbd5e1]/80 backdrop-blur-sm fade-in-up">
+          <div className="w-full h-full overflow-y-auto scrollbar-hide bg-slate-900 p-6 pt-12 pb-8 shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-slate-100">{draft.id ? 'Edit Class' : 'New Class'}</h3>
               <button onClick={() => setDraft(null)} className="p-2 rounded-full bg-slate-800 text-slate-400 hover:text-slate-900" aria-label="Close">
