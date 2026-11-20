@@ -1641,7 +1641,7 @@ class AuthDialog(tk.Toplevel):
                                 relief="flat", cursor="hand2")
         self.submit.pack(fill="x", ipady=8)
 
-        tk.Button(card, text="🛡  Admin Login", command=self.use_admin,
+        tk.Button(card, text="Admin Login", command=self.use_admin,
                   bg="#155eef", fg="#ffffff", font=("Segoe UI", 10, "bold"),
                   relief="flat", cursor="hand2").pack(fill="x", ipady=7, pady=(8, 0))
 

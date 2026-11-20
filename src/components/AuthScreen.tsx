@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertCircle, LogIn, UserPlus, Database, ShieldCheck } from 'lucide-react'
+import { AlertCircle, LogIn, UserPlus, Database } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 const ADMIN_EMAIL = 'adfaizy1976@gmail.com'
@@ -131,9 +131,9 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
 
           <button
             onClick={fillAdmin}
-            className="w-full py-2.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-xs font-bold flex items-center justify-center gap-2 hover:bg-cyan-500/20 active:scale-[0.98] transition-all"
+            className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-xl py-3 disabled:opacity-60"
           >
-            <ShieldCheck size={15} /> Admin Login
+            Admin Login
           </button>
 
           <button
