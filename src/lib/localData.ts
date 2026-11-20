@@ -29,6 +29,17 @@ export function clearLegacyCaches(): void {
   }
 }
 
+/** Remove every locally cached school record, including per-account caches. */
+export function clearAllCaches(): void {
+  try {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith('schooldashboard.data.'))
+      .forEach((key) => localStorage.removeItem(key))
+  } catch {
+    // Storage unavailable — nothing to clear.
+  }
+}
+
 function ownedRows<T extends Record<string, any>>(rows: unknown, userId: string): T[] {
   if (!Array.isArray(rows)) return []
   return rows.filter((row) => row && row.user_id === userId) as T[]

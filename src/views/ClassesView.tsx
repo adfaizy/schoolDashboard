@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, CalendarDays, Check, Layers, Pencil, Plus, Trash2, Users, X,
+  AlertTriangle, ArrowLeft, ArrowRightLeft, CalendarDays, Check, Layers, Pencil, Plus, Trash2, Users, X,
 } from 'lucide-react'
 import { classLabel, sortedClasses } from '../lib/school'
 import type { SchoolClass } from '../lib/types'
@@ -25,7 +25,7 @@ function cleanSubjects(list: string[]): string[] {
   return result
 }
 
-export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBack: () => void }) {
+export function ClassesView({ controller, onNotify, onTransfer, onBack }: ViewProps & { onBack: () => void }) {
   const { data } = controller
   const classes = useMemo(() => sortedClasses(data.classes), [data.classes])
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -56,6 +56,33 @@ export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBa
     if (incoming.length === 0) return
     setDraft({ ...draft, subjects: cleanSubjects([...draft.subjects, ...incoming]) })
     setNewSubject('')
+  }
+
+  async function deleteClassSubject(klass: SchoolClass, subject: string) {
+    const periods = data.schedule.filter((item) => item.class_id === klass.id && item.subject === subject).length
+    const studentIds = new Set(studentsIn(klass.id).map((student) => student.id))
+    const marks = data.examMarks.filter((row) => studentIds.has(row.student_id) && row.subject === subject).length
+    if (periods || marks) {
+      const parts: string[] = []
+      if (periods) parts.push(`${periods} timetable period${periods === 1 ? '' : 's'}`)
+      if (marks) parts.push(`${marks} exam mark${marks === 1 ? '' : 's'}`)
+      onNotify(`Cannot remove ${subject}: used in ${parts.join(' and ')}. Clear those records first.`, 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      await controller.saveModule('classes', {
+        id: klass.id,
+        grade: klass.grade,
+        section: klass.section,
+        subjects: cleanSubjects(klass.subjects ?? []).filter((value) => value !== subject),
+      })
+      onNotify(`${subject} removed from ${classLabel(klass)}`, 'success')
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Could not remove the subject', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   function removeSubject(subject: string) {
@@ -139,7 +166,7 @@ export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBa
   return (
     <div className="fade-in-up">
       <header className="px-6 pt-12 pb-3 sticky top-0 bg-slate-950/90 backdrop-blur-md z-10 flex items-center gap-3">
-        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-white" aria-label="Back">
+        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-slate-900" aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
@@ -198,20 +225,33 @@ export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBa
                         {subjects.length} subject{subjects.length === 1 ? '' : 's'} · {students} student{students === 1 ? '' : 's'} · {assigned} period{assigned === 1 ? '' : 's'} assigned
                       </p>
                     </div>
-                    <div className="flex items-center gap-0.5 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => onTransfer({
+                          kind: 'class',
+                          id: klass.id,
+                          name: classLabel(klass),
+                          currentClassId: klass.id,
+                        })}
+                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[9px] font-bold text-fuchsia-400 hover:bg-fuchsia-500/10"
+                        aria-label={`Transfer ${classLabel(klass)}`}
+                        title="Move all students and timetable periods to another class"
+                      >
+                        <ArrowRightLeft size={12} /> Move
+                      </button>
                       <button
                         onClick={() => openEditor(klass)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-slate-800"
+                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[9px] font-bold text-cyan-400 hover:bg-cyan-500/10"
                         aria-label="Edit class"
                       >
-                        <Pencil size={14} />
+                        <Pencil size={12} /> Edit
                       </button>
                       <button
                         onClick={() => requestDelete(klass)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800"
+                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[9px] font-bold text-rose-400 hover:bg-rose-500/10"
                         aria-label="Delete class"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} /> Delete
                       </button>
                     </div>
                   </div>
@@ -219,8 +259,30 @@ export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBa
                   {subjects.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 mt-3">
                       {subjects.map((subject) => (
-                        <span key={subject} className="text-[9px] font-semibold px-2 py-1 rounded-md bg-slate-950 border border-slate-800 text-slate-300">
+                        <span key={subject} className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-1 rounded-md bg-slate-950 border border-slate-800 text-slate-300">
                           {subject}
+                          <button
+                            onClick={(event) => { event.stopPropagation(); onTransfer({
+                              kind: 'subject',
+                              id: klass.id,
+                              name: `${subject} · ${classLabel(klass)}`,
+                              currentClassId: klass.id,
+                              subject,
+                            }) }}
+                            className="text-slate-500 hover:text-fuchsia-400"
+                            aria-label={`Transfer ${subject}`}
+                            title={`Transfer ${subject} to another class`}
+                          >
+                            <ArrowRightLeft size={10} />
+                          </button>
+                          <button
+                            onClick={(event) => { event.stopPropagation(); void deleteClassSubject(klass, subject) }}
+                            className="text-slate-600 hover:text-rose-400"
+                            aria-label={`Delete ${subject}`}
+                            title={`Delete ${subject}`}
+                          >
+                            <X size={10} />
+                          </button>
                         </span>
                       ))}
                     </div>
@@ -237,11 +299,11 @@ export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBa
       </div>
 
       {draft && (
-        <div className="absolute inset-0 z-[72] flex items-end bg-black/70 backdrop-blur-sm fade-in-up">
+        <div className="absolute inset-0 z-[72] flex items-end bg-[#e4e4e7]/85 backdrop-blur-sm fade-in-up">
           <div className="w-full max-h-[90%] overflow-y-auto scrollbar-hide bg-slate-900 border-t border-slate-700 rounded-t-3xl p-6 pb-8">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-slate-100">{draft.id ? 'Edit Class' : 'New Class'}</h3>
-              <button onClick={() => setDraft(null)} className="p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white" aria-label="Close">
+              <button onClick={() => setDraft(null)} className="p-2 rounded-full bg-slate-800 text-slate-400 hover:text-slate-900" aria-label="Close">
                 <X size={16} />
               </button>
             </div>
@@ -358,7 +420,7 @@ export function ClassesView({ controller, onNotify, onBack }: ViewProps & { onBa
       )}
 
       {deleting && (
-        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-black/70 backdrop-blur-sm p-6 fade-in-up">
+        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm p-6 fade-in-up">
           <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
             <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto mb-3">
               <AlertTriangle size={20} />

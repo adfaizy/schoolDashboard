@@ -18,7 +18,7 @@ function statusClass(status: string): string {
   }
 }
 
-export function StudentsView({ controller, onEdit, onDelete, onOpenModule }: ViewProps) {
+export function StudentsView({ controller, onEdit, onDelete, onTransfer, onOpenModule }: ViewProps) {
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState('')
   const { data } = controller
@@ -67,6 +67,7 @@ export function StudentsView({ controller, onEdit, onDelete, onOpenModule }: Vie
           <div className={`text-[10px] uppercase tracking-wider mt-0.5 ${statusClass(status)}`}>{status}</div>
         </div>
         <RowActions
+          onTransfer={() => onTransfer({ kind: 'student', id: student.id, name: student.name, currentClassId: student.class_id })}
           onEdit={() => onEdit({ kind: 'student', row: student })}
           onDelete={() => onDelete({ table: 'students', id: student.id, label: student.name })}
         />

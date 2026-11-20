@@ -240,11 +240,11 @@ export function TimetableView({ controller, onNotify, onOpenModule }: ViewProps)
       )}
 
       {target && (
-        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm px-5 fade-in-up">
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm px-5 fade-in-up">
           <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
             <div className="flex items-start justify-between px-5 pt-4 pb-2">
               <h3 className="text-sm font-bold text-slate-100">Assign Period</h3>
-              <button onClick={() => setTarget(null)} className="text-slate-500 hover:text-white p-1" aria-label="Close">
+              <button onClick={() => setTarget(null)} className="text-slate-500 hover:text-slate-900 p-1" aria-label="Close">
                 <X size={16} />
               </button>
             </div>

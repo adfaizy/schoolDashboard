@@ -23,7 +23,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # allow importing the standalone phone dialer located in the parent folder
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from school_db import (
-    SchoolDB, SINGLETON_ID, sign_in, sign_up, fetch_role,
+    SchoolDB, SINGLETON_ID, sign_in, sign_up, fetch_role, send_password_reset,
     load_session, save_session, clear_session, SupabaseError,
 )
 
@@ -53,22 +53,23 @@ def _system_dark_mode():
 
 _DARK = _system_dark_mode()
 if _DARK:
+    # shadcn light tokens: zinc surfaces with a blue primary, no black background.
     COLORS = {
-        "sidebar": "#0f172a",
-        "sidebar_hi": "#1e293b",
-        "accent": "#22d3ee",
-        "bg": "#0b1220",
-        "card": "#111827",
-        "text": "#e5e7eb",
+        "sidebar": "#fafafa",
+        "sidebar_hi": "#f4f4f5",
+        "accent": "#2563eb",
+        "bg": "#fafafa",
+        "card": "#fafafa",
+        "text": "#18181b",
     }
 else:
     COLORS = {
-        "sidebar": "#0f172a",
-        "sidebar_hi": "#1e293b",
-        "accent": "#0891b2",
-        "bg": "#f1f5f9",
+        "sidebar": "#fafafa",
+        "sidebar_hi": "#f4f4f5",
+        "accent": "#2563eb",
+        "bg": "#fafafa",
         "card": "#ffffff",
-        "text": "#0f172a",
+        "text": "#18181b",
     }
 
 
@@ -86,6 +87,26 @@ def fmt_date(value):
     if not value:
         return ""
     return str(value)[:10]
+
+
+def period_key(row):
+    period_no = row.get("period_no")
+    if period_no is not None:
+        return f"p{period_no}"
+    return f"t{row.get('time') or ''}"
+
+
+def merge_subjects(*lists):
+    seen = set()
+    result = []
+    for values in lists:
+        for value in values or []:
+            subject = str(value or "").strip()
+            if not subject or subject.lower() in seen:
+                continue
+            seen.add(subject.lower())
+            result.append(subject)
+    return result
 
 
 class CrudPanel(ttk.Frame):
@@ -266,8 +287,8 @@ class DashboardPanel(ttk.Frame):
 
         self.cards = ttk.Frame(self, padding=(12, 12, 12, 4))
         self.cards.pack(fill="x")
-        self.report = tk.Text(self, height=18, width=10, wrap="word", background="#0f172a",
-                              foreground="#e2e8f0", font=("Consolas", 10), relief="flat")
+        self.report = tk.Text(self, height=18, width=10, wrap="word", background="#f4f4f5",
+                              foreground="#18181b", font=("Consolas", 10), relief="flat")
         self.report.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         self.refresh()
 
@@ -276,8 +297,8 @@ class DashboardPanel(ttk.Frame):
                          highlightbackground="#cbd5e1")
         frame.grid(row=0, column=col, padx=6, pady=4, sticky="nsew")
         tk.Label(frame, text=value, bg=COLORS["card"], font=("Segoe UI", 22, "bold"),
-                 fg="#0f172a").pack()
-        tk.Label(frame, text=label, bg=COLORS["card"], font=("Segoe UI", 9), fg="#64748b").pack()
+                 fg="#18181b").pack()
+        tk.Label(frame, text=label, bg=COLORS["card"], font=("Segoe UI", 9), fg="#2563eb").pack()
 
     def refresh(self):
         for w in self.cards.winfo_children():
@@ -385,6 +406,48 @@ def student_transform(db):
         return data
     return wrap
 
+def ask_choice(parent, title, options, label="Destination", initial=None):
+    """Show a small picker and return the selected value from (label, value) pairs."""
+    if not options:
+        messagebox.showerror("Nothing available", "Add an option first, then transfer the record.", parent=parent)
+        return None
+    top = tk.Toplevel(parent)
+    top.title(title)
+    top.transient(parent.winfo_toplevel())
+    top.resizable(False, False)
+    top.configure(bg=COLORS["card"])
+    choice = {"value": None}
+
+    tk.Label(top, text=label, bg=COLORS["card"], fg=COLORS["text"],
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=16, pady=(16, 4))
+    initial_label = next((lbl for lbl, val in options if val == initial), options[0][0])
+    var = tk.StringVar(value=initial_label)
+    combo = ttk.Combobox(top, textvariable=var, values=[lbl for lbl, _ in options],
+                         state="readonly", width=32)
+    combo.pack(padx=16, pady=4)
+
+    def confirm():
+        lookup = dict(options)
+        choice["value"] = lookup.get(var.get())
+        top.destroy()
+
+    ttk.Button(top, text="Transfer", command=confirm).pack(fill="x", padx=16, pady=(10, 4))
+    ttk.Button(top, text="Cancel", command=top.destroy).pack(fill="x", padx=16, pady=(0, 16))
+    top.grab_set()
+    top.wait_window()
+    return choice["value"]
+
+
+def ask_class_choice(parent, db, title, exclude=None):
+    """Show a class picker and return the selected class id."""
+    classes = [c for c in db.classes() if str(c.get("id")) != str(exclude)]
+    if not classes:
+        messagebox.showerror("No classes", "Add another class first, then transfer the record.", parent=parent)
+        return None
+    return ask_choice(parent, title, [(class_label(c), str(c.get("id"))) for c in classes],
+                      label="Destination class")
+
+
 def make_students_panel(parent, db):
     cols = [
         {"key": "name", "label": "Name", "width": 180},
@@ -404,8 +467,29 @@ def make_students_panel(parent, db):
         {"key": "parent_contact", "label": "Parent contact"},
         {"key": "admission_date", "label": "Admission date", "type": "date"},
     ]
-    return CrudPanel(parent, db, "Students & Parents", "students", cols, fields,
-                     title_field="name", transform=student_transform(db))
+    panel = None
+
+    def transfer_student():
+        row = panel.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a student first.", parent=panel)
+            return
+        dest = ask_class_choice(panel, db, "Transfer student", exclude=row.get("class_id"))
+        if not dest:
+            return
+        klass = class_by_id(db, dest)
+        updates = {"class_id": dest}
+        if klass:
+            sec = f" {klass.get('section')}" if klass.get("section") else ""
+            updates["grade"] = f"{klass.get('grade')}{sec}"
+        db.update("students", row.get("id"), updates)
+        panel.refresh()
+        messagebox.showinfo("Transferred", f"{row.get('name')} moved to {db.class_name(dest)}.", parent=panel)
+
+    panel = CrudPanel(parent, db, "Students & Parents", "students", cols, fields,
+                      title_field="name", transform=student_transform(db),
+                      actions=[("Transfer", transfer_student)])
+    return panel
 
 
 def make_classes_panel(parent, db):
@@ -427,8 +511,90 @@ def make_classes_panel(parent, db):
         data["subjects"] = subjects
         return data
 
+    panel = None
+
+    def transfer_class():
+        row = panel.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a class first.", parent=panel)
+            return
+        dest = ask_class_choice(panel, db, "Transfer class", exclude=row.get("id"))
+        if not dest:
+            return
+        dest_class = class_by_id(db, dest)
+        students = [s for s in db.students() if s.get("class_id") == row.get("id")]
+        periods = [p for p in db.select("schedule_items") if p.get("class_id") == row.get("id")]
+        taken = {period_key(p) for p in db.select("schedule_items") if p.get("class_id") == dest}
+        clash = next((p for p in periods if period_key(p) in taken), None)
+        if clash:
+            messagebox.showerror("Slot conflict",
+                                 f"{db.class_name(dest)} already has "
+                                 f"{'period ' + str(clash.get('period_no')) if clash.get('period_no') is not None else clash.get('time')}.",
+                                 parent=panel)
+            return
+        if not messagebox.askyesno(
+            "Transfer class",
+            f"Move {len(students)} student(s) and {len(periods)} timetable period(s) to "
+            f"{db.class_name(dest)}? {class_label(row)} will then be deleted.",
+            parent=panel,
+        ):
+            return
+        db.update("classes", dest, {"subjects": merge_subjects(
+            (dest_class or {}).get("subjects"), row.get("subjects"))})
+        for student in students:
+            db.update("students", student.get("id"), {
+                "class_id": dest, "grade": class_label(dest_class or {"grade": db.class_name(dest)}),
+            })
+        for period in periods:
+            db.update("schedule_items", period.get("id"), {"class_id": dest})
+        db.delete("classes", row.get("id"))
+        panel.refresh()
+        messagebox.showinfo("Transferred", f"{class_label(row)} merged into {db.class_name(dest)}.", parent=panel)
+
+    def transfer_subject():
+        row = panel.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a class first.", parent=panel)
+            return
+        subjects = merge_subjects(row.get("subjects"))
+        if not subjects:
+            messagebox.showerror("No subjects", "Add subjects to this class first.", parent=panel)
+            return
+        subject = ask_choice(panel, "Transfer subject", [(s, s) for s in subjects],
+                             label="Subject to transfer", initial=subjects[0])
+        if not subject:
+            return
+        dest = ask_class_choice(panel, db, "Transfer subject", exclude=row.get("id"))
+        if not dest:
+            return
+        dest_class = class_by_id(db, dest)
+        if any(s.lower() == subject.lower() for s in merge_subjects((dest_class or {}).get("subjects"))):
+            messagebox.showerror("Already offered", f"{db.class_name(dest)} already studies {subject}.", parent=panel)
+            return
+        periods = [p for p in db.select("schedule_items")
+                   if p.get("class_id") == row.get("id") and p.get("subject") == subject]
+        taken = {period_key(p) for p in db.select("schedule_items") if p.get("class_id") == dest}
+        clash = next((p for p in periods if period_key(p) in taken), None)
+        if clash:
+            messagebox.showerror("Slot conflict",
+                                 f"{db.class_name(dest)} already has "
+                                 f"{'period ' + str(clash.get('period_no')) if clash.get('period_no') is not None else clash.get('time')}.",
+                                 parent=panel)
+            return
+        db.update("classes", row.get("id"), {
+            "subjects": [s for s in subjects if s.lower() != subject.lower()],
+        })
+        db.update("classes", dest, {
+            "subjects": merge_subjects((dest_class or {}).get("subjects"), [subject]),
+        })
+        for period in periods:
+            db.update("schedule_items", period.get("id"), {"class_id": dest})
+        panel.refresh()
+        messagebox.showinfo("Transferred", f"{subject} moved to {db.class_name(dest)}.", parent=panel)
+
     panel = CrudPanel(parent, db, "Classes & Subjects", "classes", cols, fields,
-                      title_field="grade", transform=transform)
+                      title_field="grade", transform=transform,
+                      actions=[("Transfer class", transfer_class), ("Transfer subject", transfer_subject)])
 
     original_open = panel._open_form
 
@@ -443,7 +609,7 @@ def make_classes_panel(parent, db):
     def guarded_delete():
         row = panel.selected_row()
         if row is None:
-            messagebox.showinfo("Select a row", "Please select a row first.")
+            messagebox.showinfo("Select a row", "Please select a row first.", parent=panel)
             return
         students = [s for s in db.students() if s.get("class_id") == row.get("id")]
         periods = [p for p in db.select("schedule_items") if p.get("class_id") == row.get("id")]
@@ -475,7 +641,57 @@ def make_staff_panel(parent, db):
         {"key": "status", "label": "Status", "type": "combo",
          "options": [("Active", "active"), ("Inactive", "inactive")]},
     ]
-    panel = CrudPanel(parent, db, "Teachers & Staff", "staff", cols, fields, title_field="name")
+    panel = None
+
+    def transfer_teacher():
+        row = panel.selected_row()
+        if row is None:
+            messagebox.showinfo("Select a row", "Please select a teacher first.", parent=panel)
+            return
+        if row.get("staff_category") != "teaching":
+            messagebox.showinfo("Not a teacher", "Only teaching staff have timetable assignments to transfer.", parent=panel)
+            return
+        periods = [p for p in db.select("schedule_items") if p.get("teacher") == row.get("name")]
+        if not periods:
+            messagebox.showerror("No assignment", f"{row.get('name')} has no timetable periods to transfer.", parent=panel)
+            return
+        dest = ask_class_choice(panel, db, "Transfer teacher", exclude=periods[0].get("class_id"))
+        if not dest:
+            return
+        dest_class = class_by_id(db, dest)
+        current_subjects = sorted({p.get("subject") for p in periods if p.get("subject")})
+        dest_subjects = [s for s in (dest_class.get("subjects") or []) if s] if dest_class else []
+        options = [(s, s) for s in (dest_subjects or current_subjects)]
+        if not options:
+            messagebox.showerror("No subject", "Add subjects to the destination class first.", parent=panel)
+            return
+        subject = ask_choice(panel, "Teacher subject", options, label="Assign subject",
+                             initial=current_subjects[0] if current_subjects else None)
+        if not subject:
+            return
+        moving_ids = {p.get("id") for p in periods}
+        taken = {period_key(p) for p in db.select("schedule_items")
+                 if p.get("class_id") == dest and p.get("id") not in moving_ids}
+        clash = next((p for p in periods if period_key(p) in taken), None)
+        if clash:
+            messagebox.showerror("Slot conflict",
+                                 f"{db.class_name(dest)} already has "
+                                 f"{'period ' + str(clash.get('period_no')) if clash.get('period_no') is not None else clash.get('time')}.",
+                                 parent=panel)
+            return
+        for period in periods:
+            db.update("schedule_items", period.get("id"), {
+                "class_id": dest, "teacher": row.get("name"), "subject": subject,
+            })
+        panel.refresh()
+        messagebox.showinfo(
+            "Transferred",
+            f"{row.get('name')}'s {len(periods)} period(s) moved to {db.class_name(dest)} as {subject}.",
+            parent=panel,
+        )
+
+    panel = CrudPanel(parent, db, "Teachers & Staff", "staff", cols, fields,
+                      title_field="name", actions=[("Transfer", transfer_teacher)])
 
     def guarded_delete():
         row = panel.selected_row()
@@ -565,7 +781,7 @@ class ClassPlannerPanel(ttk.Frame):
         head.pack(fill="x")
         ttk.Label(head, text="Class Planner", font=("Segoe UI", 15, "bold")).pack(side="left")
         ttk.Label(head, text="  tap any cell to assign a subject and teacher",
-                  foreground="#64748b").pack(side="left")
+                  foreground="#2563eb").pack(side="left")
         ttk.Button(head, text="Refresh", command=self.render).pack(side="right")
 
         canvas = tk.Canvas(self, highlightthickness=0, background=COLORS["bg"])
@@ -600,16 +816,16 @@ class ClassPlannerPanel(ttk.Frame):
                       padding=16).grid(row=0, column=0, sticky="w")
             return
 
-        header_bg = "#0f172a"
+        header_bg = "#2563eb"
         tk.Label(self.inner, text="Class", bg=header_bg, fg="#ffffff", width=14, pady=6,
                  font=("Segoe UI", 9, "bold"), anchor="w").grid(row=0, column=0, padx=1, pady=1, sticky="nsew")
         column = 1
         for number, label, start, end in PERIOD_DEFS:
             frame = tk.Frame(self.inner, bg=header_bg)
             frame.grid(row=0, column=column, padx=1, pady=1, sticky="nsew")
-            tk.Label(frame, text=label, bg=header_bg, fg="#67e8f9",
+            tk.Label(frame, text=label, bg=header_bg, fg="#ffffff",
                      font=("Segoe UI", 9, "bold")).pack(pady=(6, 0))
-            tk.Label(frame, text=f"{start}-{end}", bg=header_bg, fg="#cbd5e1",
+            tk.Label(frame, text=f"{start}-{end}", bg=header_bg, fg="#dbeafe",
                      font=("Segoe UI", 7)).pack(pady=(0, 6))
             column += 1
             if number == BREAK_AFTER:
@@ -619,7 +835,7 @@ class ClassPlannerPanel(ttk.Frame):
                 column += 1
 
         for index, klass in enumerate(classes, start=1):
-            tk.Label(self.inner, text=class_label(klass), bg="#e2e8f0", fg="#0f172a", width=14,
+            tk.Label(self.inner, text=class_label(klass), bg="#f4f4f5", fg="#18181b", width=14,
                      anchor="w", padx=8, pady=8, font=("Segoe UI", 10, "bold")).grid(
                 row=index, column=0, padx=1, pady=1, sticky="nsew")
             column = 1
@@ -630,7 +846,7 @@ class ClassPlannerPanel(ttk.Frame):
                 text = f"{subject}\n{teacher}" if subject else "+"
                 button = tk.Button(
                     self.inner, text=text, width=14, height=3, relief="flat", bd=0,
-                    bg="#ffffff", fg="#1d4ed8" if subject else "#94a3b8",
+                    bg="#ffffff", fg="#1d4ed8" if subject else "#a1a1aa",
                     activebackground="#e0f2fe", font=("Segoe UI", 8),
                     wraplength=110, justify="center",
                     command=lambda k=klass, p=number: self.assign(k, p),
@@ -893,7 +1109,7 @@ class ExamsPanel(ttk.Frame):
         ttk.Button(row, text="Delete selected mark", command=self.delete_mark).pack(side="left")
         ttk.Button(row, text="Generate result card (selected student)", command=self.result_card).pack(side="left", padx=8)
 
-        self.card = tk.Text(self, height=10, wrap="word", background="#0f172a", foreground="#e2e8f0",
+        self.card = tk.Text(self, height=10, wrap="word", background="#f4f4f5", foreground="#18181b",
                             font=("Consolas", 10), relief="flat")
         self.card.pack(fill="both", expand=False, padx=12, pady=(0, 12))
         self.refresh()
@@ -1382,7 +1598,7 @@ class AuthDialog(tk.Toplevel):
         self.mode = "login"
 
         card = tk.Frame(self, bg=COLORS["card"], padx=24, pady=24,
-                        highlightthickness=1, highlightbackground="#1e293b")
+                        highlightthickness=1, highlightbackground="#2563eb")
         card.pack(fill="both", expand=True, padx=18, pady=18)
 
         self.icon = tk.Label(card, text="🏫", font=("Segoe UI", 30), bg=COLORS["card"], fg=COLORS["accent"])
@@ -1391,7 +1607,7 @@ class AuthDialog(tk.Toplevel):
                                 bg=COLORS["card"], fg=COLORS["text"])
         self.heading.pack(pady=(8, 2))
         self.sub = tk.Label(card, text="Each account has its own students, staff and records.",
-                            font=("Segoe UI", 9), bg=COLORS["card"], fg="#64748b")
+                            font=("Segoe UI", 9), bg=COLORS["card"], fg="#2563eb")
         self.sub.pack(pady=(0, 18))
 
         self.name_var = tk.StringVar()
@@ -1400,35 +1616,53 @@ class AuthDialog(tk.Toplevel):
         self.error_var = tk.StringVar()
 
         self.name_row = tk.Frame(card, bg=COLORS["card"])
-        tk.Label(self.name_row, text="Principal name", bg=COLORS["card"], fg="#94a3b8",
+        tk.Label(self.name_row, text="Principal name", bg=COLORS["card"], fg="#a1a1aa",
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
         tk.Entry(self.name_row, textvariable=self.name_var, font=("Segoe UI", 11),
-                 bg="#0f172a", fg="#e2e8f0", insertbackground="#e2e8f0", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
+                 bg="#fafafa", fg="#18181b", insertbackground="#2563eb", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
 
         for label, var, show in (("Email", self.email_var, None), ("Password", self.pass_var, "*")):
             row = tk.Frame(card, bg=COLORS["card"])
-            tk.Label(row, text=label, bg=COLORS["card"], fg="#94a3b8",
+            tk.Label(row, text=label, bg=COLORS["card"], fg="#2563eb",
                      font=("Segoe UI", 9, "bold")).pack(anchor="w")
-            tk.Entry(row, textvariable=var, show=show or "", font=("Segoe UI", 11),
-                     bg="#0f172a", fg="#e2e8f0", insertbackground="#e2e8f0", relief="flat").pack(fill="x", pady=(4, 10), ipady=7)
+            entry = tk.Entry(row, textvariable=var, show=show or "", font=("Segoe UI", 11),
+                             bg="#fafafa", fg="#18181b", insertbackground="#2563eb", relief="flat")
+            entry.pack(fill="x", pady=(4, 10), ipady=7)
+            if label == "Password":
+                self.pass_entry = entry
             row.pack(fill="x")
 
         self.error_lbl = tk.Label(card, textvariable=self.error_var, bg=COLORS["card"],
-                                  fg="#fda4af", font=("Segoe UI", 9), wraplength=350, justify="left")
+                                  fg="#dc2626", font=("Segoe UI", 9), wraplength=350, justify="left")
         self.error_lbl.pack(fill="x", pady=(2, 6))
 
         self.submit = tk.Button(card, text="Sign in", command=self.do_submit,
-                                bg=COLORS["accent"], fg="#0f172a", font=("Segoe UI", 10, "bold"),
+                                bg=COLORS["accent"], fg="#ffffff", font=("Segoe UI", 10, "bold"),
                                 relief="flat", cursor="hand2")
         self.submit.pack(fill="x", ipady=8)
+
+        tk.Button(card, text="🛡  Admin Login", command=self.use_admin,
+                  bg="#2563eb", fg="#ffffff", font=("Segoe UI", 10, "bold"),
+                  relief="flat", cursor="hand2").pack(fill="x", ipady=7, pady=(8, 0))
 
         self.switch = tk.Button(card, text="New here? Create a school account", command=self.toggle,
                                 bg=COLORS["card"], fg=COLORS["accent"], font=("Segoe UI", 9),
                                 relief="flat", cursor="hand2")
         self.switch.pack(pady=(8, 0))
 
-        tk.Label(card, text="Administrator: admin@school.com", bg=COLORS["card"],
-                 fg="#475569", font=("Segoe UI", 8)).pack(side="bottom", pady=(10, 0))
+        tk.Label(card, text="Administrator: adfaizy1976@gmail.com", bg=COLORS["card"],
+                 fg="#2563eb", font=("Segoe UI", 8)).pack(side="bottom", pady=(10, 0))
+
+    def use_admin(self):
+        self.mode = "login"
+        self.name_row.pack_forget()
+        self.heading.configure(text="Sign in to your school")
+        self.sub.configure(text="Admin email filled. Enter the admin password.")
+        self.submit.configure(text="Sign in", state="normal")
+        self.switch.configure(text="New here? Create a school account")
+        self.email_var.set("adfaizy1976@gmail.com")
+        self.error_var.set("")
+        self.pass_entry.focus_set()
 
     def toggle(self):
         self.error_var.set("")
@@ -1474,27 +1708,33 @@ class AuthDialog(tk.Toplevel):
 
 # ---------------------------------------------------------------- admin panel
 class AdminPanel(tk.Frame):
-    """Lists every school account; admin can open one to view/manage its data."""
+    """Lists every school account; admin can open, reset or delete them."""
 
     def __init__(self, parent, db, app):
         super().__init__(parent, bg=COLORS["bg"])
         self.db = db
         self.app = app
+        self.users = []
 
         head = tk.Frame(self, bg=COLORS["bg"])
-        head.pack(fill="x", padx=20, pady=(18, 10))
+        head.pack(fill="x", padx=20, pady=(18, 8))
         tk.Label(head, text="Admin Console", font=("Segoe UI", 20, "bold"),
                  bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
-        tk.Label(head, text="Select a school to view and manage its records.",
-                 font=("Segoe UI", 10), bg=COLORS["bg"], fg="#64748b").pack(anchor="w", pady=(3, 0))
+        tk.Label(head,
+                 text="Schools sign up themselves. You can open, reset or delete any account.",
+                 font=("Segoe UI", 10), bg=COLORS["bg"], fg="#2563eb").pack(anchor="w", pady=(3, 0))
+        self.note = tk.Label(head, text="", font=("Segoe UI", 8), bg=COLORS["bg"], fg="#2563eb",
+                             wraplength=900, justify="left")
+        self.note.pack(anchor="w", pady=(4, 0))
 
         table_frame = tk.Frame(self, bg=COLORS["card"], padx=10, pady=10,
-                               highlightthickness=1, highlightbackground="#1e293b")
-        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+                               highlightthickness=1, highlightbackground="#fafafa")
+        table_frame.pack(fill="both", expand=True, padx=20, pady=8)
 
-        cols = ("school", "principal", "students")
-        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=16)
-        for c, label, width in (("school", "School", 320), ("principal", "Principal", 300), ("students", "Students", 100)):
+        cols = ("school", "email", "principal", "students")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=15)
+        for c, label, width in (("school", "School", 280), ("email", "Login email", 300),
+                                ("principal", "Principal", 220), ("students", "Students", 90)):
             self.tree.heading(c, text=label)
             self.tree.column(c, width=width, anchor="w")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -1506,35 +1746,99 @@ class AdminPanel(tk.Frame):
         btns = tk.Frame(self, bg=COLORS["bg"])
         btns.pack(fill="x", padx=20, pady=(0, 18))
         ttk.Button(btns, text="Refresh", command=self.load).pack(side="left", padx=(0, 8))
-        ttk.Button(btns, text="Open selected school", command=self.open_selected).pack(side="left")
+        ttk.Button(btns, text="Open selected", command=self.open_selected).pack(side="left", padx=(0, 8))
+        ttk.Button(btns, text="Reset password", command=self.reset_selected).pack(side="left", padx=(0, 8))
+        ttk.Button(btns, text="Delete account", command=self.delete_selected).pack(side="left")
+        if getattr(self.app, "viewing_name", None):
+            ttk.Button(btns, text="Back to admin", command=self.app.exit_school_view).pack(side="right")
         self.load()
 
     def load(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
-        profiles = self.db.select_unfiltered("profiles", "&role=eq.school&order=full_name.asc")
-        settings = self.db.select_unfiltered("settings")
-        students = self.db.select_unfiltered("students")
-        names = {s.get("user_id"): s.get("school_name") for s in settings}
-        counts = {}
-        for s in students:
-            counts[s.get("user_id")] = counts.get(s.get("user_id"), 0) + 1
-        for p in profiles:
-            uid = p.get("id")
-            self.tree.insert("", "end", iid=uid, values=(
-                names.get(uid) or p.get("full_name") or "Unnamed school",
-                p.get("full_name") or "Principal",
-                counts.get(uid, 0),
+        rows = self.db.admin_users()
+        if rows:
+            self.note.configure(text="")
+            self.users = rows
+        else:
+            self.note.configure(text=(
+                "Account controls are not installed. Run supabase/admin-controls.sql "
+                "in the Supabase SQL Editor, then refresh. Read-only view shown below."
+            ))
+            profiles = self.db.select_unfiltered("profiles", "&role=eq.school&order=full_name.asc")
+            settings = self.db.select_unfiltered("settings")
+            students = self.db.select_unfiltered("students")
+            names = {s.get("user_id"): s.get("school_name") for s in settings}
+            counts = {}
+            for s in students:
+                counts[s.get("user_id")] = counts.get(s.get("user_id"), 0) + 1
+            rows = []
+            for p in profiles:
+                uid = p.get("id")
+                rows.append({
+                    "id": uid,
+                    "email": "",
+                    "full_name": p.get("full_name") or "Principal",
+                    "school_name": names.get(uid) or p.get("full_name") or "Unnamed school",
+                    "students": counts.get(uid, 0),
+                })
+            self.users = rows
+        for row in self.users:
+            self.tree.insert("", "end", iid=str(row.get("id")), values=(
+                row.get("school_name") or row.get("full_name") or "Unnamed school",
+                row.get("email") or "—",
+                row.get("full_name") or "Principal",
+                row.get("students", 0),
             ))
 
-    def open_selected(self):
+    def selected_user(self):
         selected = self.tree.selection()
         if not selected:
             messagebox.showinfo("Admin", "Select a school first.", parent=self)
+            return None
+        uid = str(selected[0])
+        return next((u for u in self.users if str(u.get("id")) == uid), None)
+
+    def open_selected(self):
+        row = self.selected_user()
+        if not row:
             return
-        uid = selected[0]
-        name = self.tree.item(uid, "values")[0]
-        self.app.view_school(uid, name)
+        name = row.get("school_name") or row.get("full_name") or "Unnamed school"
+        self.app.view_school(str(row.get("id")), name)
+
+    def reset_selected(self):
+        row = self.selected_user()
+        if not row:
+            return
+        email = row.get("email")
+        if not email:
+            messagebox.showerror("Admin", "Install the latest schema SQL to see login emails.", parent=self)
+            return
+        if not messagebox.askyesno("Reset password", f"Send a password reset link to {email}?", parent=self):
+            return
+        try:
+            send_password_reset(email)
+            messagebox.showinfo("Sent", f"Reset link sent to {email}.", parent=self)
+        except SupabaseError as e:
+            messagebox.showerror("Could not send", str(e), parent=self)
+
+    def delete_selected(self):
+        row = self.selected_user()
+        if not row:
+            return
+        name = row.get("school_name") or row.get("full_name") or "this account"
+        if not messagebox.askyesno(
+            "Delete account",
+            f"Delete {name} and every record owned by it? This cannot be undone.",
+            parent=self,
+        ):
+            return
+        ok, error = self.db.admin_delete_user(str(row.get("id")))
+        if ok:
+            messagebox.showinfo("Deleted", f"{name} was deleted.", parent=self)
+            self.load()
+        else:
+            messagebox.showerror("Could not delete", error or "Admin control is not installed.", parent=self)
 
 
 # ---------------------------------------------------------------- main window
@@ -1554,12 +1858,18 @@ class App:
             pass
         style = ttk.Style()
         style.configure("TButton", font=("Segoe UI", 10), padding=(10, 4))
-        style.configure("Sidebar.TButton", background=COLORS["sidebar"], foreground="#e2e8f0",
+        style.configure("Sidebar.TButton", background=COLORS["sidebar"], foreground="#18181b",
                         borderwidth=0, focusthickness=0, anchor="w", padding=(16, 10),
                         font=("Segoe UI", 10))
         style.map("Sidebar.TButton",
                   background=[("active", COLORS["sidebar_hi"]), ("pressed", COLORS["accent"])],
-                  foreground=[("active", "#ffffff"), ("pressed", "#0f172a")])
+                  foreground=[("active", "#2563eb"), ("pressed", "#ffffff")])
+        style.configure("Logout.TButton", background="#dc2626", foreground="#ffffff",
+                        borderwidth=0, focusthickness=0, anchor="w", padding=(16, 12),
+                        font=("Segoe UI", 10, "bold"))
+        style.map("Logout.TButton",
+                  background=[("active", "#b91c1c"), ("pressed", "#991b1b")],
+                  foreground=[("active", "#ffffff")])
         style.configure("Treeview", rowheight=26, font=("Segoe UI", 9))
         style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
 
@@ -1580,7 +1890,7 @@ class App:
         bar.pack_propagate(False)
         tk.Label(bar, text="SCHOOL\nMANAGEMENT", bg=COLORS["sidebar"], fg=COLORS["accent"],
                  font=("Segoe UI", 15, "bold"), justify="left").pack(fill="x", padx=18, pady=(18, 4))
-        tk.Label(bar, text="SYSTEM", bg=COLORS["sidebar"], fg="#64748b",
+        tk.Label(bar, text="SYSTEM", bg=COLORS["sidebar"], fg="#2563eb",
                  font=("Segoe UI", 9, "bold")).pack(fill="x", padx=18, pady=(0, 12))
         self.nav_items = [
             ("dashboard", "🏠  Dashboard & Reports"),
@@ -1608,16 +1918,16 @@ class App:
                              command=lambda k=key: self.show(k))
             btn.pack(fill="x", padx=10, pady=1)
         tk.Frame(bar, bg=COLORS["sidebar"], height=20).pack()
-        ttk.Button(bar, text="↪  Sign out / Switch account", style="Sidebar.TButton",
-                   command=self.sign_out).pack(fill="x", padx=10, pady=1)
+        ttk.Button(bar, text="↪  LOGOUT / Switch account", style="Logout.TButton",
+                   command=self.sign_out).pack(fill="x", padx=10, pady=4)
         tk.Label(bar, text="Signed in as " + (self.db.email or "school account"),
-                 bg=COLORS["sidebar"], fg="#64748b",
+                 bg=COLORS["sidebar"], fg="#2563eb",
                  font=("Segoe UI", 8), wraplength=200).pack(fill="x", padx=18, pady=(8, 0))
         tk.Label(bar, text="School Dashboard v" + APP_VERSION, bg=COLORS["sidebar"],
-                 fg="#475569", font=("Segoe UI", 8)).pack(side="bottom", pady=10)
+                 fg="#71717a", font=("Segoe UI", 8)).pack(side="bottom", pady=10)
 
     def _build_statusbar(self):
-        self.status = tk.Label(self.root, text="", background="#1e293b", foreground="#7dd3fc",
+        self.status = tk.Label(self.root, text="", background="#fafafa", foreground="#2563eb",
                                anchor="w", padx=12, font=("Segoe UI", 9))
         self.status.pack(side="bottom", fill="x")
 

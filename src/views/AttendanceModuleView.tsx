@@ -63,7 +63,7 @@ export function AttendanceModuleView({ controller, onNotify, onBack }: ViewProps
   return (
     <div className="fade-in-up">
       <header className="px-6 pt-12 pb-3 sticky top-0 bg-slate-950/90 backdrop-blur-md z-10 flex items-center gap-3">
-        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-white" aria-label="Back">
+        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-slate-900" aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <h1 className="text-2xl font-bold text-slate-100 flex-1 tracking-wide">Attendance</h1>

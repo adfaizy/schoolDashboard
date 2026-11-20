@@ -5,11 +5,11 @@ import { emptyData, type DashboardData } from '../lib/types'
 
 export type TableName = 'students' | 'schedule_items' | 'messages' | 'events'
 export type ModuleTable =
-  | 'classes' | 'staff' | 'exam_marks' | 'fees' | 'library_books'
+  | 'classes' | 'staff' | 'students' | 'schedule_items' | 'exam_marks' | 'fees' | 'library_books'
   | 'transport_routes' | 'transport_passengers' | 'hostel_rooms' | 'hostel_assignments'
 type ListKey = 'students' | 'schedule' | 'messages' | 'events'
 type ModuleListKey =
-  | 'classes' | 'staff' | 'examMarks' | 'fees' | 'books'
+  | 'classes' | 'staff' | 'students' | 'schedule' | 'examMarks' | 'fees' | 'books'
   | 'routes' | 'transportPassengers' | 'hostelRooms' | 'hostelAssignments'
 
 const TABLE_TO_KEY: Record<TableName, ListKey> = {
@@ -22,6 +22,8 @@ const TABLE_TO_KEY: Record<TableName, ListKey> = {
 const MODULE_TABLE_TO_KEY: Record<ModuleTable, ModuleListKey> = {
   classes: 'classes',
   staff: 'staff',
+  students: 'students',
+  schedule_items: 'schedule',
   exam_marks: 'examMarks',
   fees: 'fees',
   library_books: 'books',

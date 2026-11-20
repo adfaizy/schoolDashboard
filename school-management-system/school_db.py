@@ -2,8 +2,8 @@
 Shared data layer for the School Management System.
 
 - Talks to the same Supabase project as the web/Android app (project yecmhcwgnivgxjihrhsa).
-- Uses Supabase Auth: every school account only sees its own rows; admin@school.com
-  can view and manage every school.
+- Uses Supabase Auth: anyone can sign up without approval; every school account
+  only sees its own rows; the administrator can view, reset and delete accounts.
 - Falls back to a per-account local JSON mirror when there is no internet.
 """
 
@@ -22,6 +22,7 @@ REST = f"{SUPABASE_URL}/rest/v1"
 AUTH = f"{SUPABASE_URL}/auth/v1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_PATH = os.path.join(BASE_DIR, "auth_session.json")
+RESET_FLAG_PATH = os.path.join(BASE_DIR, "auth_login_reset_20261120.flag")
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"
 
 
@@ -87,6 +88,15 @@ def _request(method, path, body=None, headers=None, token=None):
 
 # ---------------------------------------------------------------- auth session
 def load_session():
+    # One-time reset after all old accounts were removed: clear any stale desktop
+    # session so the sign-in screen is shown on the next launch.
+    try:
+        if not os.path.exists(RESET_FLAG_PATH):
+            clear_session()
+            with open(RESET_FLAG_PATH, "w", encoding="utf-8") as fh:
+                fh.write("1")
+    except OSError:
+        pass
     try:
         with open(SESSION_PATH, "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -152,6 +162,13 @@ def sign_in(email, password):
     }
     save_session(session)
     return session
+
+
+def send_password_reset(email):
+    """Ask Supabase Auth to email a password reset link to a school account."""
+    _, data = _http("POST", f"{AUTH}/recover", {"email": email.strip()})
+    if isinstance(data, dict) and data.get("error"):
+        raise SupabaseError(str(data.get("error")))
 
 
 def refresh_session(session):
@@ -405,3 +422,20 @@ class SchoolDB:
                 sec = f" {c['section']}" if c.get("section") else ""
                 return f"{c['grade']}{sec}"
         return fallback
+
+    # ---------- admin account controls ----------
+    def admin_users(self):
+        """List school accounts using the SQL Editor RPC (admin role only)."""
+        try:
+            _, rows = self._req("POST", "rpc/admin_list_school_users", {})
+            return rows if isinstance(rows, list) else []
+        except SupabaseError:
+            return []
+
+    def admin_delete_user(self, user_id):
+        """Delete a school account; the SQL function checks admin permission."""
+        try:
+            self._req("POST", "rpc/admin_delete_school_user", {"target": user_id})
+            return True, ""
+        except SupabaseError as e:
+            return False, str(e)

@@ -71,14 +71,14 @@ export function HomeView({
         <div className="flex items-center gap-2">
           <button
             onClick={() => onEdit({ kind: 'settings' })}
-            className="p-2.5 bg-slate-900 rounded-full border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition-colors"
+            className="p-2.5 bg-slate-900 rounded-full border border-slate-800 text-slate-300 hover:text-slate-900 hover:border-cyan-500/50 transition-colors"
             aria-label="School details"
           >
             <Settings size={19} />
           </button>
           <button
             onClick={() => onEdit({ kind: 'event' })}
-            className="relative p-2.5 bg-slate-900 rounded-full border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-500/50 transition-colors"
+            className="relative p-2.5 bg-slate-900 rounded-full border border-slate-800 text-slate-300 hover:text-slate-900 hover:border-cyan-500/50 transition-colors"
             aria-label="Add notice"
           >
             <Bell size={20} />
@@ -95,7 +95,7 @@ export function HomeView({
               <div className={`w-10 h-10 rounded-xl ${stat.color.bg} border ${stat.color.border} ${stat.color.text} flex items-center justify-center mb-4 relative z-10`}>
                 {stat.icon}
               </div>
-              <h3 className="text-xl font-black text-white tracking-tight relative z-10 truncate">{stat.value}</h3>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight relative z-10 truncate">{stat.value}</h3>
               <p className="text-xs text-slate-400 font-medium mt-1 relative z-10">{stat.title}</p>
               <p className="text-[9px] text-slate-600 mt-0.5 relative z-10 uppercase tracking-wider">{stat.detail}</p>
             </div>

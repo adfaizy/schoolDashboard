@@ -8,8 +8,8 @@
 
 create extension if not exists pgcrypto;
 
--- Bootstrap admin email. The first account created with this email becomes admin.
--- Change it before running if you want a different admin address.
+-- Bootstrap admin emails. Accounts created with these emails become admins.
+-- Change them before running if you want different admin addresses.
 -- You can also promote any account later with:
 --   update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');
 
@@ -312,7 +312,7 @@ grant select, insert, update, delete on public.settings to authenticated;
 -- Promote an existing admin email BEFORE installing the role guard.
 update public.profiles
 set role = 'admin'
-where id in (select id from auth.users where lower(email) = 'admin@school.com');
+where id in (select id from auth.users where lower(email) in ('admin@school.com', 'adfaizy1976@gmail.com'));
 
 -- Prevent a school account from making itself admin by editing its profile.
 create or replace function public.prevent_role_escalation()
@@ -347,7 +347,7 @@ begin
     new.id,
     coalesce(nullif(new.raw_user_meta_data ->> 'full_name', ''), split_part(new.email, '@', 1)),
     'Head of Administration',
-    case when lower(coalesce(new.email, '')) = 'admin@school.com' then 'admin' else 'school' end
+    case when lower(coalesce(new.email, '')) in ('admin@school.com', 'adfaizy1976@gmail.com') then 'admin' else 'school' end
   )
   on conflict (id) do nothing;
 
@@ -364,5 +364,64 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
+-- ---------------------------------------------------------------- admin user controls
+-- Public sign-up stays open: anyone can create a school account (role = school).
+-- Only an admin can call the helpers below. For an existing installation, run
+-- supabase/admin-controls.sql instead; it does not drop or recreate tables.
+
+create or replace function public.admin_list_school_users()
+returns table (
+  id uuid,
+  email text,
+  full_name text,
+  school_name text,
+  students bigint,
+  created_at timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public, auth
+as $$
+  select
+    u.id,
+    u.email,
+    p.full_name,
+    s.school_name,
+    (select count(*) from public.students st where st.user_id = u.id),
+    u.created_at
+  from auth.users u
+  join public.profiles p on p.id = u.id and p.role = 'school'
+  left join public.settings s on s.user_id = u.id
+  where public.is_admin()
+  order by coalesce(s.school_name, p.full_name, u.email)
+$$;
+
+revoke all on function public.admin_list_school_users() from public;
+grant execute on function public.admin_list_school_users() to authenticated;
+
+create or replace function public.admin_delete_school_user(target uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only an administrator can delete school accounts';
+  end if;
+  if target = auth.uid() then
+    raise exception 'An administrator cannot delete their own account';
+  end if;
+  if not exists (select 1 from public.profiles where id = target and role = 'school') then
+    raise exception 'School account not found';
+  end if;
+  delete from auth.users where id = target;
+end;
+$$;
+
+revoke all on function public.admin_delete_school_user(uuid) from public;
+grant execute on function public.admin_delete_school_user(uuid) to authenticated;
+
 -- Done. New accounts start with empty data. School accounts see only their own rows;
--- admin@school.com sees all schools and can manage any of them.
+-- the admin (adfaizy1976@gmail.com) can view, reset and delete those accounts.

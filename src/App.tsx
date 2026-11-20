@@ -6,7 +6,8 @@ import { AuthScreen } from './components/AuthScreen'
 import { Toast, type ToastState } from './components/Toast'
 import { modalConfig, type DeleteTarget, type ModalState } from './lib/forms'
 import { isConfigured, supabase } from './lib/supabase'
-import { clearLegacyCaches } from './lib/localData'
+import { clearAllCaches, clearLegacyCaches } from './lib/localData'
+import { classLabel, sortedClasses } from './lib/school'
 import { useAppUpdate } from './hooks/useAppUpdate'
 import { useDashboardData, type DashboardController } from './hooks/useDashboardData'
 import { TimetableView } from './views/TimetableView'
@@ -17,10 +18,31 @@ import { MessagesView } from './views/MessagesView'
 import { ProfileView } from './views/ProfileView'
 import { StudentsView } from './views/StudentsView'
 import { AdminView } from './views/AdminView'
+import { TransferDialog, type TransferTarget } from './views/shared'
+
+function joinSubjects(...lists: Array<string[] | string | null | undefined>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const list of lists) {
+    const values = Array.isArray(list) ? list : [list]
+    for (const value of values) {
+      const subject = String(value ?? '').trim()
+      const key = subject.toLowerCase()
+      if (!subject || seen.has(key)) continue
+      seen.add(key)
+      result.push(subject)
+    }
+  }
+  return result
+}
+
+function periodKey(item: { period_no?: number | null; time?: string | null }): string {
+  return item.period_no != null ? `p${item.period_no}` : `t${item.time ?? ''}`
+}
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center sm:p-6 font-sans selection:bg-cyan-500/30">
+    <div className="min-h-screen bg-[#fafafa] flex items-center justify-center sm:p-6 font-sans selection:bg-cyan-500/30">
       <div className="w-full h-screen sm:h-[850px] max-w-[400px] bg-slate-950 relative overflow-hidden sm:rounded-[2.5rem] sm:border-[8px] border-slate-900 shadow-2xl flex flex-col">
         {children}
       </div>
@@ -44,6 +66,10 @@ function Dashboard({
   const [moduleId, setModuleId] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [transferTarget, setTransferTarget] = useState<TransferTarget | null>(null)
+  const [transferClassId, setTransferClassId] = useState('')
+  const [transferSubject, setTransferSubject] = useState('')
+  const [transferring, setTransferring] = useState(false)
   const [toast, setToast] = useState<ToastState>(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -160,7 +186,173 @@ function Dashboard({
     }
   }
 
-  const shared = { controller, onEdit: setModal, onDelete: setDeleteTarget, onNotify: showToast, update }
+  async function confirmTransfer() {
+    if (!transferTarget || !transferClassId || transferring) return
+    const data = controller.data
+    const klass = data.classes.find((row) => row.id === transferClassId)
+    if (!klass) return
+    setTransferring(true)
+    try {
+      if (transferTarget.kind === 'student') {
+        const student = data.students.find((row) => row.id === transferTarget.id)
+        if (!student) throw new Error('Student not found.')
+        await controller.saveRecord('students', {
+          ...student,
+          class_id: klass.id,
+          grade: classLabel(klass),
+        })
+        showToast(`${student.name} moved to ${classLabel(klass)}`, 'success')
+      } else if (transferTarget.kind === 'teacher') {
+        const teacher = data.staff.find((row) => row.id === transferTarget.id)
+        if (!teacher) throw new Error('Teacher not found.')
+        const assignments = data.schedule.filter(
+          (row) => row.teacher === teacher.name && row.class_id !== klass.id,
+        )
+        if (assignments.length === 0) {
+          showToast(`${teacher.name} has no timetable periods assigned to another class.`, 'error')
+          return
+        }
+        const movingIds = new Set(assignments.map((row) => row.id))
+        const taken = new Set(
+          data.schedule
+            .filter((row) => row.class_id === klass.id && !movingIds.has(row.id))
+            .map(periodKey),
+        )
+        const clash = assignments.find((row) => taken.has(periodKey(row)))
+        if (clash) {
+          showToast(`${classLabel(klass)} already has ${clash.period_no ? `period ${clash.period_no}` : clash.time}. Clear that slot first.`, 'error')
+          return
+        }
+        const chosenSubject = transferSubject || assignments[0].subject
+        await controller.applyModuleChanges(assignments.map((row) => ({
+          table: 'schedule_items' as const,
+          row: {
+            ...row,
+            teacher: teacher.name,
+            subject: chosenSubject || row.subject,
+            class_id: klass.id,
+          },
+        })))
+        showToast(`${teacher.name}'s ${assignments.length} period${assignments.length === 1 ? '' : 's'} moved to ${classLabel(klass)}`, 'success')
+      } else if (transferTarget.kind === 'class') {
+        const source = data.classes.find((row) => row.id === transferTarget.id)
+        if (!source || source.id === klass.id) throw new Error('Class not found.')
+        const students = data.students.filter((row) => row.class_id === source.id)
+        const periods = data.schedule.filter((row) => row.class_id === source.id)
+        const taken = new Set(
+          data.schedule.filter((row) => row.class_id === klass.id).map(periodKey),
+        )
+        const clash = periods.find((row) => taken.has(periodKey(row)))
+        if (clash) {
+          showToast(`${classLabel(klass)} already has ${clash.period_no ? `period ${clash.period_no}` : clash.time}. Clear that slot first.`, 'error')
+          return
+        }
+        await controller.applyModuleChanges([
+          ...students.map((row) => ({
+            table: 'students' as const,
+            row: { ...row, class_id: klass.id, grade: classLabel(klass) },
+          })),
+          ...periods.map((row) => ({
+            table: 'schedule_items' as const,
+            row: { ...row, class_id: klass.id },
+          })),
+          {
+            table: 'classes' as const,
+            row: { ...klass, subjects: joinSubjects(klass.subjects, source.subjects) },
+          },
+        ], [{ table: 'classes', id: source.id }])
+        showToast(`${classLabel(source)} merged into ${classLabel(klass)}. ${students.length} student${students.length === 1 ? '' : 's'} moved.`, 'success')
+      } else {
+        const source = data.classes.find((row) => row.id === transferTarget.id)
+        const subject = String(transferTarget.subject ?? '').trim()
+        if (!source || !subject) throw new Error('Subject not found.')
+        if (joinSubjects(klass.subjects).some((value) => value.toLowerCase() === subject.toLowerCase())) {
+          showToast(`${classLabel(klass)} already studies ${subject}. Choose another class.`, 'error')
+          return
+        }
+        const periods = data.schedule.filter(
+          (row) => row.class_id === source.id && row.subject === subject,
+        )
+        const taken = new Set(
+          data.schedule.filter((row) => row.class_id === klass.id).map(periodKey),
+        )
+        const clash = periods.find((row) => taken.has(periodKey(row)))
+        if (clash) {
+          showToast(`${classLabel(klass)} already has ${clash.period_no ? `period ${clash.period_no}` : clash.time}. Clear that slot first.`, 'error')
+          return
+        }
+        await controller.applyModuleChanges([
+          {
+            table: 'classes' as const,
+            row: {
+              ...source,
+              subjects: joinSubjects(source.subjects).filter((value) => value.toLowerCase() !== subject.toLowerCase()),
+            },
+          },
+          {
+            table: 'classes' as const,
+            row: { ...klass, subjects: joinSubjects(klass.subjects, [subject]) },
+          },
+          ...periods.map((row) => ({
+            table: 'schedule_items' as const,
+            row: { ...row, class_id: klass.id, subject },
+          })),
+        ])
+        showToast(`${subject} moved from ${classLabel(source)} to ${classLabel(klass)}.`, 'success')
+      }
+      setTransferTarget(null)
+      setTransferClassId('')
+      setTransferSubject('')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not transfer record', 'error')
+    } finally {
+      setTransferring(false)
+    }
+  }
+
+  const classOptions = sortedClasses(controller.data.classes)
+    .filter((row) => row.id !== transferTarget?.currentClassId)
+    .map((row) => ({ value: row.id, label: classLabel(row) }))
+
+  const destination = controller.data.classes.find((row) => row.id === transferClassId)
+  const teacherSubjects = transferTarget?.kind === 'teacher'
+    ? joinSubjects(...controller.data.schedule
+      .filter((row) => row.teacher === transferTarget.name)
+      .map((row) => row.subject))
+    : []
+  const subjectOptions = transferTarget?.kind === 'teacher'
+    ? joinSubjects(destination?.subjects ?? [], teacherSubjects).map((value) => ({ value, label: value }))
+    : undefined
+
+  function transferDescription(target: TransferTarget): string {
+    if (target.kind === 'student') {
+      return `${target.name} will be enrolled in the selected class. Grade and linked reports follow the new class.`
+    }
+    if (target.kind === 'teacher') {
+      return `${target.name}'s timetable periods will move to the selected class with the chosen subject.`
+    }
+    if (target.kind === 'class') {
+      return `All students and timetable periods in ${target.name} will move here. ${target.name} will then be deleted.`
+    }
+    return `${target.name} will be taught in the selected class instead. Past exam marks stay with students.`
+  }
+
+  const shared = {
+    controller,
+    onEdit: setModal,
+    onDelete: setDeleteTarget,
+    onTransfer: (target: TransferTarget) => {
+      setTransferClassId('')
+      setTransferSubject(target.kind === 'teacher'
+        ? joinSubjects(...controller.data.schedule
+          .filter((row) => row.teacher === target.name)
+          .map((row) => row.subject))[0] ?? ''
+        : '')
+      setTransferTarget(target)
+    },
+    onNotify: showToast,
+    update,
+  }
 
   function selectTab(tab: string) {
     setActiveTab(tab)
@@ -207,14 +399,17 @@ function Dashboard({
       </div>
 
       <nav className="absolute bottom-0 w-full bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/80 pb-6 pt-3 px-6 z-50">
-        <div className="flex items-center justify-between mb-2 px-1">
+        <div className="flex items-center gap-2 mb-2 px-1">
           {isAdmin ? (
-            <button onClick={() => { setActiveTab('admin'); setModuleId(null) }} className="text-[10px] text-cyan-400 flex items-center gap-1 hover:text-cyan-300">
-              <ShieldCheck size={12} /> Schools
+            <button onClick={() => { setActiveTab('admin'); setModuleId(null) }} className="shrink-0 px-2.5 py-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-[10px] font-bold text-cyan-300 flex items-center gap-1 hover:bg-cyan-500/20">
+              <ShieldCheck size={13} /> Schools
             </button>
-          ) : <span />}
-          <button onClick={onSignOut} className="text-[10px] text-slate-500 flex items-center gap-1 hover:text-slate-300">
-            <LogOut size={12} /> Sign out
+          ) : <span className="text-[10px] font-semibold text-slate-500 pr-1">Signed in</span>}
+          <button
+            onClick={onSignOut}
+            className="flex-1 py-2 rounded-xl border border-rose-500/40 bg-rose-500/10 text-[11px] font-bold text-rose-300 flex items-center justify-center gap-1.5 hover:bg-rose-500/20 active:scale-95 transition-all"
+          >
+            <LogOut size={14} /> Logout
           </button>
         </div>
         <ul className="flex justify-between items-center">
@@ -233,7 +428,7 @@ function Dashboard({
                   <div className={`${isActive ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'} transition-colors relative`}>
                     {item.icon}
                     {isActive && (
-                      <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-1 h-1 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                      <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-1 h-1 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(37,99,235,0.8)]" />
                     )}
                   </div>
                   <span className={`text-[9px] font-medium ${isActive ? 'text-cyan-400' : 'text-slate-500'}`}>{item.label}</span>
@@ -256,7 +451,7 @@ function Dashboard({
       )}
 
       {deleteTarget && (
-        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-black/70 backdrop-blur-sm p-6 fade-in-up">
+        <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm p-6 fade-in-up">
           <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
             <h3 className="text-base font-bold text-slate-100">Delete this record?</h3>
             <p className="text-xs text-slate-400 mt-2">
@@ -280,6 +475,28 @@ function Dashboard({
           </div>
         </div>
       )}
+
+      {transferTarget && (
+        <TransferDialog
+          title={
+            transferTarget.kind === 'student' ? 'Transfer student'
+              : transferTarget.kind === 'teacher' ? 'Transfer teacher'
+                : transferTarget.kind === 'class' ? 'Transfer class' : 'Transfer subject'
+          }
+          description={transferDescription(transferTarget)}
+          options={classOptions}
+          value={transferClassId}
+          onChange={setTransferClassId}
+          onClose={() => { setTransferTarget(null); setTransferClassId(''); setTransferSubject('') }}
+          onConfirm={() => void confirmTransfer()}
+          busy={transferring}
+          confirmLabel="Move"
+          subjectOptions={subjectOptions}
+          subjectValue={transferSubject}
+          onSubjectChange={setTransferSubject}
+          subjectLabel="Teacher's subject"
+        />
+      )}
     </>
   )
 }
@@ -299,6 +516,19 @@ export default function App() {
       return
     }
     let mounted = true
+    let forceLogin = false
+    try {
+      // One-time reset after all old accounts were removed: clear every local
+      // cache and start on the login screen regardless of a stale session.
+      const resetKey = 'schooldashboard.auth.reset.20261120'
+      forceLogin = !localStorage.getItem(resetKey)
+      if (forceLogin) {
+        clearAllCaches()
+        localStorage.setItem(resetKey, '1')
+      }
+    } catch {
+      // Storage unavailable — continue with the existing session.
+    }
     async function applySession(sessionUser: { id: string; email?: string } | null) {
       if (!mounted) return
       setUser(sessionUser)
@@ -323,9 +553,12 @@ export default function App() {
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      const u = data.session?.user
+      const u = forceLogin ? null : data.session?.user
       void applySession(u ? { id: u.id, email: u.email } : null)
     })
+    if (forceLogin) {
+      void supabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
+    }
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user
       void applySession(u ? { id: u.id, email: u.email } : null)

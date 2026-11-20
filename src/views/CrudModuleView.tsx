@@ -9,7 +9,7 @@ function InlineConfirm({ label, onConfirm, onCancel, busy }: {
   label: string; onConfirm: () => void; onCancel: () => void; busy?: boolean
 }) {
   return (
-    <div className="absolute inset-0 z-[75] flex items-center justify-center bg-black/70 backdrop-blur-sm p-6 fade-in-up">
+    <div className="absolute inset-0 z-[75] flex items-center justify-center bg-[#e4e4e7]/85 backdrop-blur-sm p-6 fade-in-up">
       <div className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center">
         <h3 className="text-base font-bold text-slate-100">Delete this record?</h3>
         <p className="text-xs text-slate-400 mt-2"><span className="font-semibold text-slate-300">{label}</span> will be removed.</p>
@@ -24,7 +24,7 @@ function InlineConfirm({ label, onConfirm, onCancel, busy }: {
   )
 }
 
-export function CrudModuleView({ module, controller, onNotify, onBack }: ViewProps & {
+export function CrudModuleView({ module, controller, onNotify, onTransfer, onBack }: ViewProps & {
   module: ModuleDefinition
   onBack: () => void
 }) {
@@ -115,7 +115,7 @@ export function CrudModuleView({ module, controller, onNotify, onBack }: ViewPro
   return (
     <div className="fade-in-up">
       <header className="px-6 pt-12 pb-3 sticky top-0 bg-slate-950/90 backdrop-blur-md z-10 flex items-center gap-3">
-        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-white" aria-label="Back">
+        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-slate-900" aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <h1 className="text-2xl font-bold text-slate-100 flex-1 tracking-wide">{module.label}</h1>
@@ -136,31 +136,40 @@ export function CrudModuleView({ module, controller, onNotify, onBack }: ViewPro
         </div>
       ) : (
         <div className="px-6 flex flex-col gap-2 mt-2">
-          {rows.map((row) => (
-            <div
-              key={row.id}
-              onClick={() => setEditing(row)}
-              className="w-full text-left bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800 flex items-center gap-3 hover:border-cyan-500/40 cursor-pointer active:scale-[0.99] transition-all"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-100 truncate">{module.listTitle(row, data)}</p>
-                <p className="text-[11px] text-slate-400 truncate mt-0.5">{module.listSubtitle(row, data)}</p>
+          {rows.map((row) => {
+            const isTeacher = module.table === 'staff' && row.staff_category === 'teaching'
+            const teacherClassId = isTeacher
+              ? data.schedule.find((item) => item.teacher === row.name && item.class_id)?.class_id ?? null
+              : null
+            return (
+              <div
+                key={row.id}
+                onClick={() => setEditing(row)}
+                className="w-full text-left bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800 flex items-center gap-3 hover:border-cyan-500/40 cursor-pointer active:scale-[0.99] transition-all"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-100 truncate">{module.listTitle(row, data)}</p>
+                  <p className="text-[11px] text-slate-400 truncate mt-0.5">{module.listSubtitle(row, data)}</p>
+                </div>
+                {showAssign && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setAssignTo(assignTo?.id === row.id ? null : row) }}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-slate-800"
+                    aria-label="Assign students"
+                  >
+                    <Users size={14} />
+                  </button>
+                )}
+                <RowActions
+                  onTransfer={isTeacher
+                    ? () => onTransfer({ kind: 'teacher', id: row.id, name: row.name, currentClassId: teacherClassId })
+                    : undefined}
+                  onEdit={() => setEditing(row)}
+                  onDelete={() => requestDelete(row)}
+                />
               </div>
-              {showAssign && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setAssignTo(assignTo?.id === row.id ? null : row) }}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-slate-800"
-                  aria-label="Assign students"
-                >
-                  <Users size={14} />
-                </button>
-              )}
-              <RowActions
-                onEdit={() => setEditing(row)}
-                onDelete={() => requestDelete(row)}
-              />
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -240,11 +249,15 @@ function listKey(table: string): string {
   switch (table) {
     case 'classes': return 'classes'
     case 'staff': return 'staff'
+    case 'students': return 'students'
+    case 'schedule_items': return 'schedule'
     case 'exam_marks': return 'examMarks'
     case 'fees': return 'fees'
     case 'library_books': return 'books'
     case 'transport_routes': return 'routes'
+    case 'transport_passengers': return 'transportPassengers'
     case 'hostel_rooms': return 'hostelRooms'
+    case 'hostel_assignments': return 'hostelAssignments'
     default: return table
   }
 }

@@ -1,6 +1,8 @@
-import { useState } from 'react'
-import { AlertCircle, LogIn, UserPlus, Database } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { AlertCircle, LogIn, UserPlus, Database, ShieldCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+
+const ADMIN_EMAIL = 'adfaizy1976@gmail.com'
 
 export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
@@ -10,6 +12,15 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  function fillAdmin() {
+    setMode('login')
+    setEmail(ADMIN_EMAIL)
+    setError(null)
+    setNotice('Admin email filled. Enter the admin password to continue.')
+    window.setTimeout(() => passwordRef.current?.focus(), 0)
+  }
 
   async function submit() {
     if (!supabase) return
@@ -88,6 +99,7 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Password</label>
             <input
+              ref={passwordRef}
               value={password}
               onChange={(e) => { setPassword(e.target.value); setError(null) }}
               type="password"
@@ -118,15 +130,23 @@ export function AuthScreen({ onShowSetup }: { onShowSetup?: () => void }) {
           </button>
 
           <button
-            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setNotice(null) }}
-            className="text-xs text-cyan-400 font-semibold"
+            onClick={fillAdmin}
+            className="w-full py-2.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 text-xs font-bold flex items-center justify-center gap-2 hover:bg-cyan-500/20 active:scale-[0.98] transition-all"
           >
-            {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            <ShieldCheck size={15} /> Admin Login
+          </button>
+
+          <button
+            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setNotice(null); setPassword('') }}
+            className="w-full py-2.5 rounded-xl border border-slate-700 bg-slate-900/60 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 hover:border-cyan-500/40 hover:text-cyan-300"
+          >
+            <UserPlus size={14} />
+            {mode === 'login' ? 'Create school account (Sign up)' : 'I already have an account (Sign in)'}
           </button>
 
           {mode === 'login' && (
             <p className="text-[10px] text-slate-600 text-center leading-relaxed">
-              Administrator account: admin@school.com
+              Administrator account: {ADMIN_EMAIL}
             </p>
           )}
 

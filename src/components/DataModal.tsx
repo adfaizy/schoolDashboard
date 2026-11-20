@@ -53,11 +53,11 @@ export function DataModal({
   }
 
   return (
-    <div className="absolute inset-0 z-[70] flex items-end bg-black/70 backdrop-blur-sm fade-in-up">
+    <div className="absolute inset-0 z-[70] flex items-end bg-[#e4e4e7]/85 backdrop-blur-sm fade-in-up">
       <div className="w-full max-h-[88%] overflow-y-auto scrollbar-hide bg-slate-900 border-t border-slate-700 rounded-t-3xl p-6 pb-8 shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-slate-100">{title}</h3>
-          <button onClick={onClose} className="p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white" aria-label="Close">
+          <button onClick={onClose} className="p-2 rounded-full bg-slate-800 text-slate-400 hover:text-slate-900" aria-label="Close">
             <X size={16} />
           </button>
         </div>

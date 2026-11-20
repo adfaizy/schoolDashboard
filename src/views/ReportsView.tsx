@@ -39,7 +39,7 @@ export function ReportsView({ controller, onBack }: ViewProps & {
   return (
     <div className="fade-in-up">
       <header className="px-6 pt-12 pb-3 sticky top-0 bg-slate-950/90 backdrop-blur-md z-10 flex items-center gap-3">
-        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-white" aria-label="Back">
+        <button onClick={onBack} className="p-2 rounded-full text-slate-400 hover:text-slate-900" aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <h1 className="text-2xl font-bold text-slate-100 flex-1 tracking-wide">Reports</h1>
@@ -49,7 +49,7 @@ export function ReportsView({ controller, onBack }: ViewProps & {
         {stats.map((stat) => (
           <div key={stat.title} className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800/60 relative overflow-hidden">
             <div className={`absolute -right-6 -top-6 w-24 h-24 ${stat.color.bg} rounded-full blur-2xl opacity-60`} />
-            <h3 className="text-xl font-black text-white tracking-tight relative z-10 truncate">{stat.value}</h3>
+            <h3 className="text-xl font-black text-slate-900 tracking-tight relative z-10 truncate">{stat.value}</h3>
             <p className="text-xs text-slate-400 font-medium mt-1 relative z-10">{stat.title}</p>
           </div>
         ))}

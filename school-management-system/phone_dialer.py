@@ -27,7 +27,7 @@ class PhoneDialer:
                 dark = False
         else:
             dark = False
-        _bg = "#0b1020" if dark else "#f1f5f9"
+        _bg = "#27272a" if dark else "#fafafa"
         if self._standalone:
             self.window.configure(bg=_bg)
         else:
@@ -54,27 +54,27 @@ class PhoneDialer:
         else:
             dark = False
         if dark:
-            self.bg = "#0b1020"
-            self.card = "#111827"
-            self.display_bg = "#0f172a"
-            self.text = "#e5e7eb"
-            self.muted = "#94a3b8"
+            self.bg = "#27272a"
+            self.card = "#3f3f46"
+            self.display_bg = "#18181b"
+            self.text = "#fafafa"
+            self.muted = "#a1a1aa"
         else:
-            self.bg = "#f1f5f9"
+            self.bg = "#fafafa"
             self.card = "#ffffff"
-            self.display_bg = "#e2e8f0"
-            self.text = "#0f172a"
-            self.muted = "#475569"
-        self.digit_bg = "#1d4ed8"
-        self.digit_hover = "#2563eb"
+            self.display_bg = "#f4f4f5"
+            self.text = "#18181b"
+            self.muted = "#71717a"
+        self.digit_bg = "#2563eb"
+        self.digit_hover = "#1d4ed8"
         self.special_bg = "#7c3aed"
-        self.special_hover = "#8b5cf6"
+        self.special_hover = "#6d28d9"
         self.call_bg = "#16a34a"
         self.call_hover = "#22c55e"
         self.end_bg = "#dc2626"
-        self.end_hover = "#ef4444"
-        self.utility_bg = "#334155"
-        self.utility_hover = "#475569"
+        self.end_hover = "#b91c1c"
+        self.utility_bg = "#3f3f46"
+        self.utility_hover = "#52525b"
 
         self._build_ui()
 

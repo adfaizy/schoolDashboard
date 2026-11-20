@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
@@ -14,9 +14,20 @@ body,
 
 body {
   margin: 0;
-  background: #000;
+  background: #fafafa;
+  color: #18181b;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+}
+
+/* shadcn shell: light zinc surfaces, no black background. */
+.bg-black,
+.bg-black\/70 {
+  background-color: #fafafa !important;
+}
+
+.bg-black\/70 {
+  background-color: rgba(250, 250, 250, 0.82) !important;
 }
 
 .scrollbar-hide::-webkit-scrollbar {
